@@ -4,34 +4,28 @@ export enum DurationType {
   LONG = 'LONG',
 }
 
-export enum EmissionStatus {
+export enum AiringStatus {
   ON_AIR = 'ON_AIR',
   FINISHED = 'FINISHED',
-  ON_BREAK = 'ON_BREAK',
-}
-
-export interface GenreDto {
-  id: string;
-  name: string;
+  UPCOMING = 'UPCOMING',
+  UNKNOWN = 'UNKNOWN',
 }
 
 export interface AnimeDto {
   id: number;
-  externalApiId: string;
   title: string;
   originalTitle: string | null;
   synopsis: string;
-  coverImageUrl: string;
-  mangaPlusUrl: string;
-  totalEpisodes: number | null;
+  imageUrl: string;
+  mangaPlusSearchUrl: string;
+  episodeCount: number | null;
   durationType: DurationType;
-  emissionStatus: EmissionStatus;
+  airingStatus: AiringStatus;
   releaseYear: number | null;
-  genres: GenreDto[];
+  genres: string[];
   score: number | null;
   rating: string | null;
   season: string | null;
-  status: string | null;
   studios: string[];
   trailerUrl: string | null;
 }

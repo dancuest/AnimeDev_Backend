@@ -1,8 +1,7 @@
 import {
   AnimeDto,
   DurationType,
-  EmissionStatus,
-  GenreDto,
+  AiringStatus,
 } from './dto/anime.dto';
 import { JikanAnime } from './types/jikan.types';
 
@@ -10,39 +9,31 @@ const DEFAULT_MANGA_PLUS_BASE =
   'https://mangaplus.shueisha.co.jp/titles?search=';
 
 export class AnimeMapper {
-  toGenreDto(genre: { mal_id: number; name: string }): GenreDto {
-    return {
-      id: String(genre.mal_id),
-      name: genre.name,
-    };
-  }
-
   toAnimeDto(anime: JikanAnime): AnimeDto {
     const durationMinutes = this.parseDurationMinutes(anime.duration ?? '');
     const durationType = this.toDurationType(durationMinutes);
-    const emissionStatus = this.toEmissionStatus(anime.status ?? '');
-    const coverImageUrl =
+    const airingStatus = this.toAiringStatus(anime.status ?? '');
+    const imageUrl =
       anime.images?.jpg?.large_image_url ??
       anime.images?.jpg?.image_url ??
       '';
+    const title = anime.title ?? '';
 
     return {
       id: anime.mal_id,
-      externalApiId: String(anime.mal_id),
-      title: anime.title ?? '',
+      title,
       originalTitle: anime.title_japanese ?? anime.title_english ?? null,
       synopsis: anime.synopsis ?? '',
-      coverImageUrl,
-      mangaPlusUrl: this.buildMangaPlusUrl(anime.title ?? ''),
-      totalEpisodes: anime.episodes ?? null,
+      imageUrl,
+      mangaPlusSearchUrl: this.buildMangaPlusUrl(title),
+      episodeCount: anime.episodes ?? null,
       durationType,
-      emissionStatus,
+      airingStatus,
       releaseYear: anime.year ?? null,
-      genres: (anime.genres ?? []).map((genre) => this.toGenreDto(genre)),
+      genres: (anime.genres ?? []).map((genre) => genre.name),
       score: anime.score ?? null,
       rating: anime.rating ?? null,
       season: anime.season ?? null,
-      status: anime.status ?? null,
       studios: (anime.studios ?? []).map((studio) => studio.name),
       trailerUrl: anime.trailer?.url ?? anime.trailer?.embed_url ?? null,
     };
@@ -64,15 +55,18 @@ export class AnimeMapper {
     return DurationType.LONG;
   }
 
-  private toEmissionStatus(status: string): EmissionStatus {
+  private toAiringStatus(status: string): AiringStatus {
     const normalized = status.toLowerCase();
     if (normalized.includes('airing')) {
-      return EmissionStatus.ON_AIR;
+      return AiringStatus.ON_AIR;
     }
     if (normalized.includes('finished')) {
-      return EmissionStatus.FINISHED;
+      return AiringStatus.FINISHED;
     }
-    return EmissionStatus.ON_BREAK;
+    if (normalized.includes('not yet') || normalized.includes('upcoming')) {
+      return AiringStatus.UPCOMING;
+    }
+    return AiringStatus.UNKNOWN;
   }
 
   private parseDurationMinutes(duration: string): number | null {
