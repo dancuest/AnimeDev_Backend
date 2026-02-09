@@ -1,7 +1,8 @@
 import {
   AnimeDto,
   DurationType,
-  AiringStatus,
+  EmissionStatus,
+  GenreDto,
 } from './dto/anime.dto';
 import { JikanAnime } from './types/jikan.types';
 
@@ -9,33 +10,36 @@ const DEFAULT_MANGA_PLUS_BASE =
   'https://mangaplus.shueisha.co.jp/titles?search=';
 
 export class AnimeMapper {
+  toGenreDto(genre: { mal_id: number; name: string }): GenreDto {
+    return {
+      id: String(genre.mal_id),
+      name: genre.name,
+    };
+  }
+
   toAnimeDto(anime: JikanAnime): AnimeDto {
     const durationMinutes = this.parseDurationMinutes(anime.duration ?? '');
     const durationType = this.toDurationType(durationMinutes);
-    const airingStatus = this.toAiringStatus(anime.status ?? '');
-    const imageUrl =
-      anime.images?.jpg?.large_image_url ??
+    const emissionStatus = this.toEmissionStatus(anime.status ?? '', anime.airing ?? null);
+    const coverImageUrl =
       anime.images?.jpg?.image_url ??
+      anime.images?.webp?.image_url ??
       '';
     const title = anime.title ?? '';
 
     return {
       id: anime.mal_id,
+      externalApiId: String(anime.mal_id),
       title,
       originalTitle: anime.title_japanese ?? anime.title_english ?? null,
       synopsis: anime.synopsis ?? '',
-      imageUrl,
-      mangaPlusSearchUrl: this.buildMangaPlusUrl(title),
-      episodeCount: anime.episodes ?? null,
+      coverImageUrl,
+      mangaPlusUrl: this.buildMangaPlusUrl(title),
+      totalEpisodes: anime.episodes ?? null,
       durationType,
-      airingStatus,
+      emissionStatus,
       releaseYear: anime.year ?? null,
-      genres: (anime.genres ?? []).map((genre) => genre.name),
-      score: anime.score ?? null,
-      rating: anime.rating ?? null,
-      season: anime.season ?? null,
-      studios: (anime.studios ?? []).map((studio) => studio.name),
-      trailerUrl: anime.trailer?.url ?? anime.trailer?.embed_url ?? null,
+      genres: (anime.genres ?? []).map((genre) => this.toGenreDto(genre)),
     };
   }
 
@@ -48,25 +52,26 @@ export class AnimeMapper {
       return DurationType.SHORT;
     }
 
-    if (minutes <= 30) {
+    if (minutes <= 35) {
       return DurationType.MEDIUM;
     }
 
     return DurationType.LONG;
   }
 
-  private toAiringStatus(status: string): AiringStatus {
+  private toEmissionStatus(status: string, airing: boolean | null): EmissionStatus {
+    if (airing) {
+      return EmissionStatus.ON_AIR;
+    }
+
     const normalized = status.toLowerCase();
-    if (normalized.includes('airing')) {
-      return AiringStatus.ON_AIR;
+    if (normalized.includes('currently airing')) {
+      return EmissionStatus.ON_AIR;
     }
-    if (normalized.includes('finished')) {
-      return AiringStatus.FINISHED;
+    if (normalized.includes('finished airing')) {
+      return EmissionStatus.FINISHED;
     }
-    if (normalized.includes('not yet') || normalized.includes('upcoming')) {
-      return AiringStatus.UPCOMING;
-    }
-    return AiringStatus.UNKNOWN;
+    return EmissionStatus.ON_BREAK;
   }
 
   private parseDurationMinutes(duration: string): number | null {
