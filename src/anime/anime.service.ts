@@ -110,7 +110,7 @@ export class AnimeService {
     }
 
     const fresh = await fetcher();
-    await this.cacheManager.set(key, fresh, { ttl: this.cacheTtlSeconds });
+    await this.cacheManager.set(key, fresh, this.cacheTtlSeconds);
     return fresh;
   }
 
