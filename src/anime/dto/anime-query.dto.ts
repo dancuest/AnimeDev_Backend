@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AnimeTopQueryDto {
@@ -25,4 +25,20 @@ export class AnimeSearchQueryDto {
   @Min(1)
   @Max(50)
   limit?: number;
+}
+
+export class GenresQueryDto {
+  @ApiPropertyOptional({
+    example: false,
+    default: true,
+    description: 'Whether to include adult genres (Ecchi, Hentai, Erotica)',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === '') return undefined;
+    if (typeof value === 'boolean') return value;
+    return String(value).toLowerCase() !== 'false';
+  })
+  @IsBoolean()
+  includeAdult?: boolean;
 }
