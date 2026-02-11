@@ -13,6 +13,8 @@ import { JikanAnime, JikanDetailResponse, JikanListResponse } from './types/jika
 export class AnimeService {
   private readonly baseUrl: string;
   private readonly cacheTtlMs: number;
+  private readonly shortCacheTtlMs: number;
+  private static readonly ADULT_GENRE_IDS = new Set(['9', '12', '49']);
 
   constructor(
     private readonly httpService: HttpService,
@@ -23,6 +25,7 @@ export class AnimeService {
     this.baseUrl = this.configService.get<string>('jikanBaseUrl') ??
       'https://api.jikan.moe/v4';
     this.cacheTtlMs = this.configService.get('cacheTtlMs') ?? 600_000;
+    this.shortCacheTtlMs = this.configService.get('shortCacheTtlMs') ?? 60_000;
   }
 
   async getTop(limit = 10, requestId?: string) {
@@ -30,7 +33,7 @@ export class AnimeService {
     const data = await this.getCached(cacheKey, async () => {
       const response = await this.fetchList<JikanAnime>('/top/anime', { limit }, requestId);
       return response.data.map((anime) => this.mapper.toAnimeDto(anime));
-    });
+    }, this.shortCacheTtlMs);
 
     return {
       data,
@@ -104,7 +107,7 @@ export class AnimeService {
         );
       }
       return items[Math.floor(Math.random() * items.length)];
-    });
+    }, this.shortCacheTtlMs);
 
     return { data: anime };
   }
@@ -128,16 +131,18 @@ export class AnimeService {
     };
   }
 
-  async getGenres(requestId?: string): Promise<{ data: GenreDto[] }> {
-    const cacheKey = 'anime:genres';
+  async getGenres(includeAdult = true, requestId?: string): Promise<{ data: GenreDto[] }> {
+    const cacheKey = `anime:genres:${includeAdult ? 'all' : 'safe'}`;
     const genres = await this.getCached(cacheKey, async () => {
       const response = await this.fetchList<{ mal_id: number; name: string }>(
         '/genres/anime',
         {},
         requestId,
       );
-      return response.data.map((genre) => this.mapper.toGenreDto(genre));
-    });
+      const mappedGenres = response.data.map((genre) => this.mapper.toGenreDto(genre));
+      if (includeAdult) return mappedGenres;
+      return mappedGenres.filter((genre) => !AnimeService.ADULT_GENRE_IDS.has(genre.id));
+    }, this.shortCacheTtlMs);
 
     return {
       data: genres,
@@ -173,19 +178,24 @@ export class AnimeService {
     }
   }
 
-  private async getCached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  private async getCached<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttlMs = this.cacheTtlMs,
+  ): Promise<T> {
     const cached = await this.cacheManager.get<T>(key);
     if (cached !== undefined && cached !== null) return cached;
 
     const fresh = await fetcher();
-    await this.cacheManager.set(key, fresh, this.cacheTtlMs);
+    await this.cacheManager.set(key, fresh, ttlMs);
     return fresh;
   }
 
   private buildUpstreamError(error: unknown, requestId: string | undefined, endpoint: string) {
     const axiosError = error as {
-      response?: { status?: number; data?: { message?: string } };
+      response?: { status?: number; data?: { message?: string; error?: string } };
       message?: string;
+      code?: string;
     };
 
     const upstreamStatus = axiosError.response?.status;
@@ -194,12 +204,16 @@ export class AnimeService {
         ? HttpStatus.SERVICE_UNAVAILABLE
         : HttpStatus.BAD_GATEWAY;
 
+    const upstreamMessage = axiosError.response?.data?.message ?? axiosError.response?.data?.error;
+    const fallbackMessage = `Jikan upstream request failed at ${endpoint}`;
+
     return new HttpException(
       {
-        statusCode,
-        message: 'Failed to fetch data from upstream provider',
-        upstream: 'jikan',
-        requestId: requestId ?? null,
+        error: {
+          code: 'UPSTREAM_FAILURE',
+          message: upstreamMessage ?? axiosError.message ?? fallbackMessage,
+          requestId: requestId ?? null,
+        },
       },
       statusCode,
     );
