@@ -4,8 +4,8 @@ import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cache } from 'cache-manager';
 import { lastValueFrom } from 'rxjs';
-import { AnimeDetailDto } from './dto/anime-detail.dto';
-import { AnimeDto } from './dto/anime.dto';
+import { AnimeDetailDto, TrailerDto } from './dto/anime-detail.dto';
+import { AnimeDto, GenreDto } from './dto/anime.dto';
 import { AnimeMapper } from './anime.mapper';
 import { JikanAnime, JikanDetailResponse, JikanListResponse } from './types/jikan.types';
 
@@ -58,19 +58,89 @@ export class AnimeService {
     };
   }
 
-  async getById(id: number, requestId?: string): Promise<{ data: AnimeDetailDto }> {
-    const cacheKey = `anime:detail:${id}`;
+  async getById(id: number, requestId?: string): Promise<{ data: AnimeDto }> {
+    const cacheKey = `anime:${id}`;
     const anime = await this.getCached(cacheKey, async () => {
       const response = await this.fetchDetail<JikanAnime>(`/anime/${id}`, requestId);
       return this.mapper.toAnimeDto(response.data);
     });
 
     return {
-      data: {
+      data: anime,
+    };
+  }
+
+  async getDetail(id: number, requestId?: string): Promise<{ data: AnimeDetailDto }> {
+    const cacheKey = `anime:detail:${id}`;
+    const detail = await this.getCached(cacheKey, async () => {
+      const response = await this.fetchDetail<JikanAnime>(`/anime/${id}`, requestId);
+      const anime = this.mapper.toAnimeDto(response.data);
+      return {
         anime,
-        culturalNotes: [],
-        trailers: [],
+        culturalNotes: this.buildCulturalNotes(anime, response.data),
+        trailers: this.buildTrailers(anime),
+      };
+    });
+
+    return {
+      data: detail,
+    };
+  }
+
+  async getHero(requestId?: string): Promise<{ data: AnimeDto }> {
+    const cacheKey = 'anime:hero';
+    const anime = await this.getCached(cacheKey, async () => {
+      const response = await this.fetchList<JikanAnime>('/top/anime', { limit: 10 }, requestId);
+      const items = response.data.map((item) => this.mapper.toAnimeDto(item));
+      if (items.length === 0) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+            message: 'No hero anime available from upstream provider',
+            upstream: 'jikan',
+            requestId: requestId ?? null,
+          },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+      return items[Math.floor(Math.random() * items.length)];
+    });
+
+    return { data: anime };
+  }
+
+  async getByGenre(
+    genreId: string,
+    limit = 10,
+    requestId?: string,
+  ): Promise<{ data: AnimeDto[]; meta: { limit: number } }> {
+    const response = await this.fetchList<JikanAnime>(
+      '/anime',
+      { genres: genreId, limit },
+      requestId,
+    );
+
+    return {
+      data: response.data.map((anime) => this.mapper.toAnimeDto(anime)),
+      meta: {
+        limit,
       },
+    };
+  }
+
+  async getGenres(requestId?: string): Promise<{ data: GenreDto[] }> {
+    const cacheKey = 'anime:genres';
+    const genres = await this.getCached(cacheKey, async () => {
+      const response = await this.fetchList<{ mal_id: number; name: string }>(
+        '/genres/anime',
+        {},
+        requestId,
+      );
+      return response.data.map((genre) => this.mapper.toGenreDto(genre));
+    });
+
+    return {
+      data: genres,
     };
   }
 
@@ -120,22 +190,59 @@ export class AnimeService {
       message?: string;
     };
 
-    const upstreamStatus = axiosError.response?.status ?? null;
-    const upstreamMessage =
-      axiosError.response?.data?.message ?? axiosError.message ?? 'Unknown error';
+    const upstreamStatus = axiosError.response?.status;
+    const statusCode =
+      upstreamStatus && upstreamStatus >= 500
+        ? HttpStatus.SERVICE_UNAVAILABLE
+        : HttpStatus.BAD_GATEWAY;
 
     return new HttpException(
       {
-        statusCode: HttpStatus.BAD_GATEWAY,
+        statusCode,
         message: 'Failed to fetch data from upstream provider',
-        upstream: {
-          status: upstreamStatus,
-          message: upstreamMessage,
-          endpoint: `${this.baseUrl}${endpoint}`,
-        },
+        upstream: 'jikan',
         requestId: requestId ?? null,
       },
-      HttpStatus.BAD_GATEWAY,
+      statusCode,
     );
+  }
+
+  private buildCulturalNotes(anime: AnimeDto, source: JikanAnime): string[] {
+    const notes: string[] = [];
+    if (anime.releaseYear) {
+      notes.push(`Estrenado en ${anime.releaseYear}.`);
+    }
+    if (source.season) {
+      notes.push(`Temporada original: ${source.season}.`);
+    }
+    if (source.studios && source.studios.length > 0) {
+      const studioNames = source.studios.slice(0, 2).map((studio) => studio.name).join(', ');
+      notes.push(`Producción a cargo de ${studioNames}.`);
+    }
+    if (anime.genres.length > 0) {
+      const genreNames = anime.genres.slice(0, 3).map((genre) => genre.name).join(', ');
+      notes.push(`Combina elementos de ${genreNames}.`);
+    }
+    notes.push('Ideal para explorar nuevas tendencias del anime.');
+    notes.push('Recomendado para fans que buscan historias memorables.');
+    return notes.slice(0, 4);
+  }
+
+  private buildTrailers(anime: AnimeDto): TrailerDto[] {
+    const base = anime.title.trim() || 'anime trailer';
+    const variants = [
+      `${base} trailer`,
+      `${base} PV`,
+      `${base} opening`,
+      `${base} teaser`,
+    ];
+
+    return variants.slice(0, 4).map((query, index) => ({
+      number: index + 1,
+      title: query,
+      durationMinutes: 2 + index,
+      description: `Búsqueda sugerida para ${anime.title}.`,
+      youtubeUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+    }));
   }
 }
