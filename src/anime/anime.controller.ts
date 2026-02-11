@@ -13,14 +13,14 @@ export class AnimeController {
   @ApiOperation({ summary: 'Get top anime list' })
   @ApiOkResponse({ description: 'Returns top anime with meta wrapper.' })
   getTop(@Query() query: AnimeTopQueryDto, @Req() req: Request) {
-    return this.animeService.getTop(query.limit ?? 10, req.requestId);
+    return this.animeService.getTop(query.limit ?? 10, req.requestId, query.includeAdult);
   }
 
   @Get('search')
   @ApiOperation({ summary: 'Search anime by query' })
   @ApiOkResponse({ description: 'Returns search results with meta wrapper.' })
   search(@Query() query: AnimeSearchQueryDto, @Req() req: Request) {
-    return this.animeService.search(query.q, query.limit ?? 10, req.requestId);
+    return this.animeService.search(query.q, query.limit ?? 10, req.requestId, query.includeAdult);
   }
 
   @Get('hero')
@@ -31,14 +31,17 @@ export class AnimeController {
   }
 
   @Get('by-genre/:genreId')
-  @ApiOperation({ summary: 'Get anime by genre id' })
-  @ApiOkResponse({ description: 'Returns anime filtered by genre.' })
   getByGenre(
-    @Param('genreId') genreId: string,
+    @Param('genreId', ParseIntPipe) genreId: number,
     @Query() query: AnimeTopQueryDto,
     @Req() req: Request,
   ) {
-    return this.animeService.getByGenre(genreId, query.limit ?? 10, req.requestId);
+    return this.animeService.getByGenre(
+      String(genreId),
+      query.limit ?? 10,
+      req.requestId,
+      query.includeAdult,
+    );
   }
 
   @Get(':id/detail')

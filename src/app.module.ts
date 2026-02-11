@@ -1,6 +1,6 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import configuration from '../config/configuration';
 import { validateEnvironment } from '../config/env.validation';
 import { AnimeModule } from './anime/anime.module';
@@ -15,12 +15,13 @@ import { HealthModule } from './health/health.module';
     }),
     CacheModule.registerAsync({
       isGlobal: true,
-      useFactory: () => ({
-        ttl: Number(process.env.CACHE_TTL_SECONDS ?? 600),
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        ttl: config.get<number>('cacheTtlMs') ?? 600_000,
       }),
     }),
     HealthModule,
     AnimeModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

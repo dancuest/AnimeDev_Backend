@@ -12,7 +12,9 @@ import { JikanAnime, JikanDetailResponse, JikanListResponse } from './types/jika
 @Injectable()
 export class AnimeService {
   private readonly baseUrl: string;
-  private readonly cacheTtlSeconds: number;
+  private readonly cacheTtlMs: number;
+  private readonly shortCacheTtlMs: number;
+  private static readonly ADULT_GENRE_IDS = new Set(['9', '12', '49']);
 
   constructor(
     private readonly httpService: HttpService,
@@ -20,17 +22,36 @@ export class AnimeService {
     private readonly mapper: AnimeMapper,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
-    this.baseUrl = this.configService.get<string>('jikanBaseUrl') ??
-      'https://api.jikan.moe/v4';
-    this.cacheTtlSeconds = this.configService.get<number>('cacheTtlSeconds') ?? 600;
+    this.baseUrl = this.configService.get<string>('jikanBaseUrl') ?? 'https://api.jikan.moe/v4';
+    this.cacheTtlMs = this.configService.get('cacheTtlMs') ?? 600_000;
+    this.shortCacheTtlMs = this.configService.get('shortCacheTtlMs') ?? 60_000;
   }
 
-  async getTop(limit = 10, requestId?: string) {
-    const cacheKey = `anime:top:${limit}`;
-    const data = await this.getCached(cacheKey, async () => {
-      const response = await this.fetchList<JikanAnime>('/top/anime', { limit }, requestId);
-      return response.data.map((anime) => this.mapper.toAnimeDto(anime));
-    });
+  /**
+   * If includeAdult !== true -> enforce sfw=true upstream (Jikan)
+   */
+  private withSfw(
+    params: Record<string, string | number | boolean | undefined>,
+    includeAdult?: boolean,
+  ) {
+    if (includeAdult === true) return params;
+    return { ...params, sfw: true };
+  }
+
+  async getTop(limit = 10, requestId?: string, includeAdult?: boolean) {
+    const cacheKey = `anime:top:${limit}:${includeAdult === true ? 'all' : 'sfw'}`;
+    const data = await this.getCached(
+      cacheKey,
+      async () => {
+        const response = await this.fetchList<JikanAnime>(
+          '/top/anime',
+          this.withSfw({ limit }, includeAdult),
+          requestId,
+        );
+        return response.data.map((anime) => this.mapper.toAnimeDto(anime));
+      },
+      this.shortCacheTtlMs,
+    );
 
     return {
       data,
@@ -40,10 +61,10 @@ export class AnimeService {
     };
   }
 
-  async search(query: string, limit = 10, requestId?: string) {
+  async search(query: string, limit = 10, requestId?: string, includeAdult?: boolean) {
     const response = await this.fetchList<JikanAnime>(
       '/anime',
-      { q: query, limit },
+      this.withSfw({ q: query, limit }, includeAdult),
       requestId,
     );
 
@@ -89,22 +110,30 @@ export class AnimeService {
 
   async getHero(requestId?: string): Promise<{ data: AnimeDto }> {
     const cacheKey = 'anime:hero';
-    const anime = await this.getCached(cacheKey, async () => {
-      const response = await this.fetchList<JikanAnime>('/top/anime', { limit: 10 }, requestId);
-      const items = response.data.map((item) => this.mapper.toAnimeDto(item));
-      if (items.length === 0) {
-        throw new HttpException(
-          {
-            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-            message: 'No hero anime available from upstream provider',
-            upstream: 'jikan',
-            requestId: requestId ?? null,
-          },
-          HttpStatus.SERVICE_UNAVAILABLE,
+    const anime = await this.getCached(
+      cacheKey,
+      async () => {
+        const response = await this.fetchList<JikanAnime>(
+          '/top/anime',
+          this.withSfw({ limit: 10 }, false),
+          requestId,
         );
-      }
-      return items[Math.floor(Math.random() * items.length)];
-    });
+        const items = response.data.map((item) => this.mapper.toAnimeDto(item));
+        if (items.length === 0) {
+          throw new HttpException(
+            {
+              statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+              message: 'No hero anime available from upstream provider',
+              upstream: 'jikan',
+              requestId: requestId ?? null,
+            },
+            HttpStatus.SERVICE_UNAVAILABLE,
+          );
+        }
+        return items[Math.floor(Math.random() * items.length)];
+      },
+      this.shortCacheTtlMs,
+    );
 
     return { data: anime };
   }
@@ -113,10 +142,11 @@ export class AnimeService {
     genreId: string,
     limit = 10,
     requestId?: string,
+    includeAdult?: boolean,
   ): Promise<{ data: AnimeDto[]; meta: { limit: number } }> {
     const response = await this.fetchList<JikanAnime>(
       '/anime',
-      { genres: genreId, limit },
+      this.withSfw({ genres: genreId, limit }, includeAdult),
       requestId,
     );
 
@@ -128,16 +158,22 @@ export class AnimeService {
     };
   }
 
-  async getGenres(requestId?: string): Promise<{ data: GenreDto[] }> {
-    const cacheKey = 'anime:genres';
-    const genres = await this.getCached(cacheKey, async () => {
-      const response = await this.fetchList<{ mal_id: number; name: string }>(
-        '/genres/anime',
-        {},
-        requestId,
-      );
-      return response.data.map((genre) => this.mapper.toGenreDto(genre));
-    });
+  async getGenres(includeAdult = true, requestId?: string): Promise<{ data: GenreDto[] }> {
+    const cacheKey = `anime:genres:${includeAdult ? 'all' : 'safe'}`;
+    const genres = await this.getCached(
+      cacheKey,
+      async () => {
+        const response = await this.fetchList<{ mal_id: number; name: string }>(
+          '/genres/anime',
+          {},
+          requestId,
+        );
+        const mappedGenres = response.data.map((genre) => this.mapper.toGenreDto(genre));
+        if (includeAdult) return mappedGenres;
+        return mappedGenres.filter((genre) => !AnimeService.ADULT_GENRE_IDS.has(genre.id));
+      },
+      this.shortCacheTtlMs,
+    );
 
     return {
       data: genres,
@@ -159,10 +195,7 @@ export class AnimeService {
     }
   }
 
-  private async fetchDetail<T>(
-    endpoint: string,
-    requestId?: string,
-  ): Promise<JikanDetailResponse<T>> {
+  private async fetchDetail<T>(endpoint: string, requestId?: string): Promise<JikanDetailResponse<T>> {
     try {
       const response = await lastValueFrom(
         this.httpService.get<JikanDetailResponse<T>>(`${this.baseUrl}${endpoint}`),
@@ -173,35 +206,36 @@ export class AnimeService {
     }
   }
 
-  private async getCached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  private async getCached<T>(key: string, fetcher: () => Promise<T>, ttlMs = this.cacheTtlMs): Promise<T> {
     const cached = await this.cacheManager.get<T>(key);
-    if (cached) {
-      return cached;
-    }
+    if (cached !== undefined && cached !== null) return cached;
 
     const fresh = await fetcher();
-    await this.cacheManager.set(key, fresh, this.cacheTtlSeconds);
+    await this.cacheManager.set(key, fresh, ttlMs);
     return fresh;
   }
 
   private buildUpstreamError(error: unknown, requestId: string | undefined, endpoint: string) {
     const axiosError = error as {
-      response?: { status?: number; data?: { message?: string } };
+      response?: { status?: number; data?: { message?: string; error?: string } };
       message?: string;
+      code?: string;
     };
 
     const upstreamStatus = axiosError.response?.status;
     const statusCode =
-      upstreamStatus && upstreamStatus >= 500
-        ? HttpStatus.SERVICE_UNAVAILABLE
-        : HttpStatus.BAD_GATEWAY;
+      upstreamStatus && upstreamStatus >= 500 ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
+
+    const upstreamMessage = axiosError.response?.data?.message ?? axiosError.response?.data?.error;
+    const fallbackMessage = `Jikan upstream request failed at ${endpoint}`;
 
     return new HttpException(
       {
-        statusCode,
-        message: 'Failed to fetch data from upstream provider',
-        upstream: 'jikan',
-        requestId: requestId ?? null,
+        error: {
+          code: 'UPSTREAM_FAILURE',
+          message: upstreamMessage ?? axiosError.message ?? fallbackMessage,
+          requestId: requestId ?? null,
+        },
       },
       statusCode,
     );
@@ -230,12 +264,7 @@ export class AnimeService {
 
   private buildTrailers(anime: AnimeDto): TrailerDto[] {
     const base = anime.title.trim() || 'anime trailer';
-    const variants = [
-      `${base} trailer`,
-      `${base} PV`,
-      `${base} opening`,
-      `${base} teaser`,
-    ];
+    const variants = [`${base} trailer`, `${base} PV`, `${base} opening`, `${base} teaser`];
 
     return variants.slice(0, 4).map((query, index) => ({
       number: index + 1,
