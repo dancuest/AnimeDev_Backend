@@ -12,7 +12,7 @@ import { JikanAnime, JikanDetailResponse, JikanListResponse } from './types/jika
 @Injectable()
 export class AnimeService {
   private readonly baseUrl: string;
-  private readonly cacheTtlSeconds: number;
+  private readonly cacheTtlMs: number;
 
   constructor(
     private readonly httpService: HttpService,
@@ -22,7 +22,7 @@ export class AnimeService {
   ) {
     this.baseUrl = this.configService.get<string>('jikanBaseUrl') ??
       'https://api.jikan.moe/v4';
-    this.cacheTtlSeconds = this.configService.get<number>('cacheTtlSeconds') ?? 600;
+    this.cacheTtlMs = this.configService.get('cacheTtlMs') ?? 600_000;
   }
 
   async getTop(limit = 10, requestId?: string) {
@@ -175,12 +175,10 @@ export class AnimeService {
 
   private async getCached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
     const cached = await this.cacheManager.get<T>(key);
-    if (cached) {
-      return cached;
-    }
+    if (cached !== undefined && cached !== null) return cached;
 
     const fresh = await fetcher();
-    await this.cacheManager.set(key, fresh, this.cacheTtlSeconds);
+    await this.cacheManager.set(key, fresh, this.cacheTtlMs);
     return fresh;
   }
 

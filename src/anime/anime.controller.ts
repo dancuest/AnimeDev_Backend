@@ -7,7 +7,7 @@ import { AnimeSearchQueryDto, AnimeTopQueryDto } from './dto/anime-query.dto';
 @ApiTags('anime')
 @Controller('anime')
 export class AnimeController {
-  constructor(private readonly animeService: AnimeService) {}
+  constructor(private readonly animeService: AnimeService) { }
 
   @Get('top')
   @ApiOperation({ summary: 'Get top anime list' })
@@ -31,14 +31,12 @@ export class AnimeController {
   }
 
   @Get('by-genre/:genreId')
-  @ApiOperation({ summary: 'Get anime by genre id' })
-  @ApiOkResponse({ description: 'Returns anime filtered by genre.' })
   getByGenre(
-    @Param('genreId') genreId: string,
+    @Param('genreId', ParseIntPipe) genreId: number,
     @Query() query: AnimeTopQueryDto,
     @Req() req: Request,
   ) {
-    return this.animeService.getByGenre(genreId, query.limit ?? 10, req.requestId);
+    return this.animeService.getByGenre(String(genreId), query.limit ?? 10, req.requestId);
   }
 
   @Get(':id/detail')
