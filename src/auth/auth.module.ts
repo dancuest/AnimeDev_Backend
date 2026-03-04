@@ -17,7 +17,7 @@ import { JwtStrategy } from './jwt.strategy';
         return {
           secret,
           signOptions: {
-            expiresIn: expiresIn as any, // ✅ mantiene tu workaround de tipos
+            expiresIn: expiresIn as any, 
           },
         };
       },

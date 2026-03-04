@@ -30,7 +30,7 @@ class EnvironmentVariables {
   @Min(30)
   SHORT_CACHE_TTL_SECONDS?: number;
 
-  // ✅ JWT (para login y auth desde backend)
+  
   @IsOptional()
   @IsString()
   @MinLength(32)

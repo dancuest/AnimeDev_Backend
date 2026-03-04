@@ -4,7 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import configuration from '../config/configuration';
 import { validateEnvironment } from '../config/env.validation';
-
+import { UsersModule } from './users/users.module';
 import { AnimeModule } from './anime/anime.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -17,6 +17,7 @@ import { AuthModule } from './auth/auth.module';
       load: [configuration],
       validate: validateEnvironment,
     }),
+
     CacheModule.registerAsync({
       isGlobal: true,
       inject: [ConfigService],
@@ -26,8 +27,8 @@ import { AuthModule } from './auth/auth.module';
     }),
 
     PrismaModule,
-    AuthModule, // ✅ ESTO ES LO QUE TE FALTABA
-
+    AuthModule,
+    UsersModule,
     HealthModule,
     AnimeModule,
   ],

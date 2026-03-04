@@ -20,7 +20,7 @@ export class PrismaService
 
     super({
       adapter,
-      // opcional: logs útiles
+      
       log: ['error', 'warn'],
     });
   }
