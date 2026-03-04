@@ -1,10 +1,14 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+
 import configuration from '../config/configuration';
 import { validateEnvironment } from '../config/env.validation';
+
 import { AnimeModule } from './anime/anime.module';
 import { HealthModule } from './health/health.module';
+import { PrismaModule } from '../prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -20,8 +24,12 @@ import { HealthModule } from './health/health.module';
         ttl: config.get<number>('cacheTtlMs') ?? 600_000,
       }),
     }),
+
+    PrismaModule,
+    AuthModule, // ✅ ESTO ES LO QUE TE FALTABA
+
     HealthModule,
     AnimeModule,
   ],
 })
-export class AppModule { }
+export class AppModule {}
