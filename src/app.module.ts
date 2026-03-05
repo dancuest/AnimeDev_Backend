@@ -9,6 +9,7 @@ import { AnimeModule } from './anime/anime.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { RecommendationsModule } from './recommendations/recommendations.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { AuthModule } from './auth/auth.module';
     UsersModule,
     HealthModule,
     AnimeModule,
+    RecommendationsModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }
