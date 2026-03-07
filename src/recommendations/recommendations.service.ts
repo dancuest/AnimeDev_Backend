@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnimeService } from '../anime/anime.service';
+import { AnimeDto } from '../anime/dto/anime.dto';
 import { calculateCosineSimilarity } from './algorithms/cosine-similarity.util';
 import { InteractionType } from '@prisma/client';
 
@@ -109,7 +110,7 @@ export class RecommendationsService {
         }
 
         // Resolve detailed AnimeDto based on IDs
-        const recommendedList = [];
+        const recommendedList: AnimeDto[] = [];
         for (const animeId of sortedAnimes) {
             try {
                 const animeDetails = await this.animeService.getById(animeId, requestId);
