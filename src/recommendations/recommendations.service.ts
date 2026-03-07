@@ -78,30 +78,46 @@ export class RecommendationsService {
             }
         }
 
-        // 4. Generate Predictions for unseen Animes
-        // We look at animes the user HAS NOT interacted with, but similar users HAVE.
-        const predictedScores = new Map<number, number>();
+        // 4. Keep only top-K neighbors to reduce noise
+        const topK = 20;
+        const topNeighbors = Array.from(userSimilarities.entries())
+            .filter(([, similarity]) => similarity > 0)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, topK);
 
-        for (const [otherUserId, similarity] of userSimilarities.entries()) {
-            if (similarity <= 0) continue; // Only consider users with positive correlation
+        // 5. Generate normalized predictions for unseen animes
+        // predicted[animeId] += sim * score; then divide by sumAbsSim
+        const scoreSums = new Map<number, number>();
+        const absSimilaritySums = new Map<number, number>();
 
+        for (const [otherUserId, similarity] of topNeighbors) {
             const otherUserVector = userVectors.get(otherUserId)!;
 
             for (const [animeId, score] of otherUserVector.entries()) {
-                // Skip if current user already interacted with this anime
                 if (currentUserVector.has(animeId)) continue;
 
-                const weightedScore = score * similarity;
-                const currentTotal = predictedScores.get(animeId) || 0;
-                predictedScores.set(animeId, currentTotal + weightedScore);
+                const weightedScore = similarity * score;
+                scoreSums.set(animeId, (scoreSums.get(animeId) || 0) + weightedScore);
+                absSimilaritySums.set(
+                    animeId,
+                    (absSimilaritySums.get(animeId) || 0) + Math.abs(similarity),
+                );
             }
         }
 
-        // 5. Sort by Top N
+        const predictedScores = new Map<number, number>();
+        for (const [animeId, scoreSum] of scoreSums.entries()) {
+            const similarityTotal = absSimilaritySums.get(animeId) || 0;
+            if (similarityTotal === 0) continue;
+
+            predictedScores.set(animeId, scoreSum / similarityTotal);
+        }
+
+        // 6. Sort by Top N
         const sortedAnimes = Array.from(predictedScores.entries())
-            .sort((a, b) => b[1] - a[1]) // Descending
+            .sort((a, b) => b[1] - a[1])
             .slice(0, 10)
-            .map(entry => entry[0]);
+            .map(([animeId]) => animeId);
 
         // Format output exactly as top/search
         if (sortedAnimes.length === 0) {

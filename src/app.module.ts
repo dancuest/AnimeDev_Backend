@@ -10,6 +10,7 @@ import { HealthModule } from './health/health.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { RecommendationsModule } from './recommendations/recommendations.module';
+import { InteractionsModule } from './interactions/interactions.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { RecommendationsModule } from './recommendations/recommendations.module'
     HealthModule,
     AnimeModule,
     RecommendationsModule,
+    InteractionsModule,
   ],
 })
 export class AppModule { }
