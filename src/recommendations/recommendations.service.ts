@@ -29,7 +29,7 @@ export class RecommendationsService {
 
         // Safety check, if no data return top anime
         if (allInteractions.length < 5) {
-            this.logger.debug('Not enough data for Collaborative Filtering, returning fallback (Top Anime)');
+            this.logger.log('Not enough data for collaborative filtering, using top-anime fallback');
             return this.animeService.getTop(10, requestId);
         }
 
@@ -63,7 +63,7 @@ export class RecommendationsService {
 
         // If the requesting user has no interactions, return top anime
         if (!currentUserVector || currentUserVector.size === 0) {
-            this.logger.debug(`User ${userId} has no interactions, returning Top Anime`);
+            this.logger.log(`User ${userId} has no interactions, using top-anime fallback`);
             return this.animeService.getTop(10, requestId);
         }
 
@@ -87,6 +87,9 @@ export class RecommendationsService {
 
         // 5. Generate normalized predictions for unseen animes
         // predicted[animeId] += sim * score; then divide by sumAbsSim
+        // NOTE: In the next iteration we will blend here demographic and
+        // explicit preference signals (e.g. ageRange/genderCode/preferredGenres)
+        // with this cosine-based collaborative score, without replacing this flow.
         const scoreSums = new Map<number, number>();
         const absSimilaritySums = new Map<number, number>();
 
@@ -121,7 +124,7 @@ export class RecommendationsService {
 
         // Format output exactly as top/search
         if (sortedAnimes.length === 0) {
-            this.logger.debug(`No recommendations found after CF, returning Top Anime`);
+            this.logger.log('No cosine-based recommendations found, using top-anime fallback');
             return this.animeService.getTop(10, requestId);
         }
 
