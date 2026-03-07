@@ -24,7 +24,9 @@ export class InteractionsService {
         userId,
         animeId: dto.animeId,
         type: dto.type,
-        payload: dto.payload,
+        // payload is validated earlier as object but Prisma expects a more
+        // specific Json union type. Cast to any to appease the compiler.
+        payload: dto.payload as any,
       },
     });
   }
