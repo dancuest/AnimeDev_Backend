@@ -40,12 +40,14 @@ export class UsersService {
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
     const normalizedEmail = dto.email?.trim();
+    const emailUpdateValue =
+      dto.email === undefined ? undefined : normalizedEmail ? normalizedEmail : null;
 
     return this.prisma.user.update({
       where: { id: userId },
       data: {
         displayName: dto.displayName?.trim() || undefined,
-        email: normalizedEmail ? normalizedEmail : undefined,
+        email: emailUpdateValue,
       },
       select: {
         id: true,

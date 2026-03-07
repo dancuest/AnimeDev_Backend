@@ -14,7 +14,19 @@ export class InteractionsService {
       throw new BadRequestException('animeId must be greater than 0');
     }
 
-    if (dto.type === InteractionType.TRIVIA_SCORE) {
+    const normalizedType = dto.type ?? dto.interactionType;
+
+    if (!normalizedType) {
+      throw new BadRequestException('type is required');
+    }
+
+    if (dto.interactionType && !dto.type) {
+      this.logger.warn(
+        `Legacy field interactionType used for user=${userId}; please migrate client payload to type`,
+      );
+    }
+
+    if (normalizedType === InteractionType.TRIVIA_SCORE) {
       const score = dto.payload?.score;
       if (typeof score !== 'number' || Number.isNaN(score) || score < 0 || score > 10) {
         throw new BadRequestException(
@@ -27,7 +39,7 @@ export class InteractionsService {
       data: {
         userId,
         animeId: dto.animeId,
-        type: dto.type,
+        type: normalizedType,
         payload: dto.payload as any,
       },
       select: {
@@ -41,11 +53,12 @@ export class InteractionsService {
     });
 
     this.logger.log(
-      `Interaction stored user=${userId} anime=${dto.animeId} type=${dto.type} interactionId=${created.id}`,
+      `Interaction stored user=${userId} anime=${dto.animeId} type=${normalizedType} interactionId=${created.id}`,
     );
 
     return {
-      message: 'Interaction registered successfully',
+      success: true,
+      message: 'Interaction recorded',
       interaction: created,
     };
   }

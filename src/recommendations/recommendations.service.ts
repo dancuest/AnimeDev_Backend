@@ -123,7 +123,10 @@ export class RecommendationsService {
     );
 
     if (animeDetails.length === 0) {
-      return this.getTopFallback(requestId);
+      this.logger.warn(
+        `Collaborative/hybrid candidate details were empty for user ${userId}, switching to fallback`,
+      );
+      return this.getTopFallback(requestId, 'empty_hybrid_details');
     }
 
     const normalizedCollaborative = this.minMaxNormalize(collaborativeScores);
@@ -154,6 +157,13 @@ export class RecommendationsService {
 
     const strategy: RecommendationMeta["strategy"] =
       hasPreferences || hasDemographicSignals ? "hybrid" : "collaborative";
+
+    if (reranked.length === 0) {
+      this.logger.warn(
+        `Collaborative/hybrid scoring produced no results for user ${userId}, switching to fallback`,
+      );
+      return this.getTopFallback(requestId, 'empty_hybrid_scores');
+    }
 
     return {
       data: reranked,
@@ -262,7 +272,7 @@ export class RecommendationsService {
     hasAnySignal: boolean,
   ) {
     if (!hasAnySignal) {
-      return this.getTopFallback(requestId);
+      return this.getTopFallback(requestId, "no_personalization_signal");
     }
 
     const topPool = await this.animeService.getTop(40, requestId);
@@ -294,6 +304,11 @@ export class RecommendationsService {
       .slice(0, 10)
       .map((item) => item.anime);
 
+    if (reranked.length === 0) {
+      this.logger.warn('Cold-start reranking produced no results, switching to fallback');
+      return this.getTopFallback(requestId, 'empty_cold_start');
+    }
+
     return {
       data: reranked,
       meta: {
@@ -304,9 +319,9 @@ export class RecommendationsService {
     };
   }
 
-  private async getTopFallback(requestId?: string) {
-    this.logger.log(
-      "No personalization signals available, using top-anime fallback",
+  private async getTopFallback(requestId?: string, reason = 'no_signal') {
+    this.logger.warn(
+      `Using top-anime fallback strategy (reason=${reason})`,
     );
     const top = await this.animeService.getTop(10, requestId);
 

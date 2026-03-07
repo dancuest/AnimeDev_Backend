@@ -1,5 +1,5 @@
 import { InteractionType } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsEnum, IsInt, IsObject, IsOptional, Min } from 'class-validator';
 
 export class CreateInteractionDto {
@@ -8,8 +8,13 @@ export class CreateInteractionDto {
   @Min(1)
   animeId!: number;
 
+  @Transform(({ value, obj }) => value ?? obj?.interactionType)
   @IsEnum(InteractionType)
   type!: InteractionType;
+
+  @IsOptional()
+  @IsEnum(InteractionType)
+  interactionType?: InteractionType;
 
   @IsOptional()
   @IsObject()
