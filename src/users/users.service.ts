@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnimeService } from '../anime/anime.service';
 
 type UpdateProfileDto = {
   displayName?: string;
@@ -12,12 +13,17 @@ type UpdateSettingsDto = {
   regionCode?: number;
   preferredGenres?: number[];
   preferredDurations?: string[];
-  toggles?: any; 
+  toggles?: any;
 };
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(UsersService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly animeService: AnimeService,
+  ) {}
 
   async getMe(userId: string) {
     return this.prisma.user.findUnique({
@@ -33,11 +39,13 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const normalizedEmail = dto.email?.trim();
+
     return this.prisma.user.update({
       where: { id: userId },
       data: {
-        displayName: dto.displayName ?? undefined,
-        email: dto.email ?? undefined,
+        displayName: dto.displayName?.trim() || undefined,
+        email: normalizedEmail ? normalizedEmail : undefined,
       },
       select: {
         id: true,
@@ -50,8 +58,7 @@ export class UsersService {
   }
 
   async getMySettings(userId: string) {
-    // upsert: si no existen settings, los crea
-    return this.prisma.userSettings.upsert({
+    const settings = await this.prisma.userSettings.upsert({
       where: { userId },
       update: {},
       create: { userId },
@@ -67,10 +74,17 @@ export class UsersService {
         updatedAt: true,
       },
     });
+
+    const preferredGenreDetails = await this.resolvePreferredGenreDetails(settings.preferredGenres);
+
+    return {
+      ...settings,
+      preferredGenreDetails,
+    };
   }
 
   async updateMySettings(userId: string, dto: UpdateSettingsDto) {
-    return this.prisma.userSettings.upsert({
+    const settings = await this.prisma.userSettings.upsert({
       where: { userId },
       update: {
         ageRange: dto.ageRange ?? undefined,
@@ -101,5 +115,32 @@ export class UsersService {
         updatedAt: true,
       },
     });
+
+    const preferredGenreDetails = await this.resolvePreferredGenreDetails(settings.preferredGenres);
+
+    return {
+      ...settings,
+      preferredGenreDetails,
+    };
+  }
+
+  private async resolvePreferredGenreDetails(preferredGenres: number[]) {
+    if (!preferredGenres.length) {
+      return [];
+    }
+
+    try {
+      const genresCatalog = await this.animeService.getGenres(true);
+      const genreMap = new Map(
+        genresCatalog.data.map((genre) => [Number(genre.id), { id: Number(genre.id), name: genre.name }]),
+      );
+
+      return preferredGenres
+        .map((genreId) => genreMap.get(genreId))
+        .filter((genre): genre is { id: number; name: string } => Boolean(genre));
+    } catch (error) {
+      this.logger.warn('Could not resolve preferred genre details from catalog');
+      return [];
+    }
   }
 }

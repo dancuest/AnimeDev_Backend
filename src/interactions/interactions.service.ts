@@ -1,34 +1,53 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InteractionType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateInteractionDto } from './dto/create-interaction.dto';
 
 @Injectable()
 export class InteractionsService {
+  private readonly logger = new Logger(InteractionsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateInteractionDto) {
+    if (dto.animeId <= 0) {
+      throw new BadRequestException('animeId must be greater than 0');
+    }
+
     if (dto.type === InteractionType.TRIVIA_SCORE) {
       const score = dto.payload?.score;
-      const total = dto.payload?.total;
-
-      if (typeof score !== 'number' || typeof total !== 'number') {
+      if (typeof score !== 'number' || Number.isNaN(score) || score < 0 || score > 10) {
         throw new BadRequestException(
-          'TRIVIA_SCORE payload must include numeric score and total',
+          'TRIVIA_SCORE payload must include numeric score between 0 and 10',
         );
       }
     }
 
-    return this.prisma.userInteraction.create({
+    const created = await this.prisma.userInteraction.create({
       data: {
         userId,
         animeId: dto.animeId,
         type: dto.type,
-        // payload is validated earlier as object but Prisma expects a more
-        // specific Json union type. Cast to any to appease the compiler.
         payload: dto.payload as any,
       },
+      select: {
+        id: true,
+        userId: true,
+        animeId: true,
+        type: true,
+        payload: true,
+        createdAt: true,
+      },
     });
+
+    this.logger.log(
+      `Interaction stored user=${userId} anime=${dto.animeId} type=${dto.type} interactionId=${created.id}`,
+    );
+
+    return {
+      message: 'Interaction registered successfully',
+      interaction: created,
+    };
   }
 
   async listMine(userId: string, limit = 50) {
