@@ -1,10 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InteractionType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnimeService } from '../anime/anime.service';
 
 type UpdateProfileDto = {
   displayName?: string;
   email?: string;
+  avatarUrl?: string;
+  coverImageUrl?: string;
 };
 
 type UpdateSettingsDto = {
@@ -26,16 +29,31 @@ export class UsersService {
   ) {}
 
   async getMe(userId: string) {
-    return this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        deviceId: true,
-        email: true,
-        displayName: true,
-        createdAt: true,
-      },
-    });
+    const [user, stats] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          deviceId: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          coverImageUrl: true,
+          createdAt: true,
+        },
+      }),
+      this.buildInteractionStats(userId),
+    ]);
+
+    if (!user) {
+      return null;
+    }
+
+    return {
+      ...user,
+      completedTrivias: stats.completedTrivias,
+      favoriteCount: stats.favoriteCount,
+    };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -43,20 +61,36 @@ export class UsersService {
     const emailUpdateValue =
       dto.email === undefined ? undefined : normalizedEmail ? normalizedEmail : null;
 
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        displayName: dto.displayName?.trim() || undefined,
-        email: emailUpdateValue,
-      },
-      select: {
-        id: true,
-        deviceId: true,
-        email: true,
-        displayName: true,
-        createdAt: true,
-      },
-    });
+    const avatarUrlUpdateValue = this.normalizeOptionalStringField(dto.avatarUrl);
+    const coverImageUrlUpdateValue = this.normalizeOptionalStringField(dto.coverImageUrl);
+
+    const [user, stats] = await Promise.all([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          displayName: dto.displayName?.trim() || undefined,
+          email: emailUpdateValue,
+          avatarUrl: avatarUrlUpdateValue,
+          coverImageUrl: coverImageUrlUpdateValue,
+        },
+        select: {
+          id: true,
+          deviceId: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          coverImageUrl: true,
+          createdAt: true,
+        },
+      }),
+      this.buildInteractionStats(userId),
+    ]);
+
+    return {
+      ...user,
+      completedTrivias: stats.completedTrivias,
+      favoriteCount: stats.favoriteCount,
+    };
   }
 
   async getMySettings(userId: string) {
@@ -77,7 +111,9 @@ export class UsersService {
       },
     });
 
-    const preferredGenreDetails = await this.resolvePreferredGenreDetails(settings.preferredGenres);
+    const preferredGenreDetails = await this.resolvePreferredGenreDetails(
+      settings.preferredGenres,
+    );
 
     return {
       ...settings,
@@ -118,7 +154,9 @@ export class UsersService {
       },
     });
 
-    const preferredGenreDetails = await this.resolvePreferredGenreDetails(settings.preferredGenres);
+    const preferredGenreDetails = await this.resolvePreferredGenreDetails(
+      settings.preferredGenres,
+    );
 
     return {
       ...settings,
@@ -133,8 +171,12 @@ export class UsersService {
 
     try {
       const genresCatalog = await this.animeService.getGenres(true);
+
       const genreMap = new Map(
-        genresCatalog.data.map((genre) => [Number(genre.id), { id: Number(genre.id), name: genre.name }]),
+        genresCatalog.data.map((genre) => [
+          Number(genre.id),
+          { id: Number(genre.id), name: genre.name },
+        ]),
       );
 
       return preferredGenres
@@ -144,5 +186,64 @@ export class UsersService {
       this.logger.warn('Could not resolve preferred genre details from catalog');
       return [];
     }
+  }
+
+  private async buildInteractionStats(userId: string) {
+    const interactions = await this.prisma.userInteraction.findMany({
+      where: {
+        userId,
+        type: {
+          in: [
+            InteractionType.FAVORITE,
+            InteractionType.UNFAVORITE,
+            InteractionType.TRIVIA_SCORE,
+          ],
+        },
+      },
+      select: {
+        animeId: true,
+        type: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    let completedTrivias = 0;
+    const latestFavoriteStateByAnime = new Map<number, InteractionType>();
+
+    for (const interaction of interactions) {
+      if (interaction.type === InteractionType.TRIVIA_SCORE) {
+        completedTrivias += 1;
+      }
+
+      if (
+        interaction.type === InteractionType.FAVORITE ||
+        interaction.type === InteractionType.UNFAVORITE
+      ) {
+        if (!latestFavoriteStateByAnime.has(interaction.animeId)) {
+          latestFavoriteStateByAnime.set(interaction.animeId, interaction.type);
+        }
+      }
+    }
+
+    const favoriteCount = Array.from(latestFavoriteStateByAnime.values()).filter(
+      (type) => type === InteractionType.FAVORITE,
+    ).length;
+
+    return {
+      completedTrivias,
+      favoriteCount,
+    };
+  }
+
+  private normalizeOptionalStringField(value?: string) {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 }
