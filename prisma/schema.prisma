@@ -21,16 +21,16 @@ model User {
 }
 
 model UserSettings {
-  userId              String   @id
-  ageRange            Int      @default(0)
-  genderCode          Int      @default(0)
-  regionCode          Int      @default(0)
-  preferredGenres     Int[]    @default([])
-  toggles             Json     @default("{}")
-  updatedAt           DateTime @updatedAt
-  createdAt           DateTime @default(now())
-  preferredDurations  String[] @default([])
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             String   @id
+  ageRange           Int      @default(0)
+  genderCode         Int      @default(0)
+  regionCode         Int      @default(0)
+  preferredGenres    Int[]    @default([])
+  toggles            Json     @default("{}")
+  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now())
+  preferredDurations String[] @default([])
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserInteraction {
