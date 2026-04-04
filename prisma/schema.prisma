@@ -7,19 +7,20 @@ datasource db {
 }
 
 model User {
-  id                    String            @id @default(uuid())
-  deviceId              String?           @unique
-  createdAt             DateTime          @default(now())
-  email                 String?           @unique
-  password              String?
-  displayName           String?
-  avatarUrl             String?
-  coverImageUrl         String?
-  passwordResetToken    String?
+  id                     String            @id @default(uuid())
+  deviceId               String?           @unique
+  createdAt              DateTime          @default(now())
+  email                  String?           @unique
+  password               String?
+  displayName            String?
+  nickname               String?
+  avatarUrl              String?
+  coverImageUrl          String?
+  passwordResetToken     String?
   passwordResetExpiresAt DateTime?
-  updatedAt             DateTime          @updatedAt
-  interactions          UserInteraction[]
-  settings              UserSettings?
+  updatedAt              DateTime          @updatedAt
+  interactions           UserInteraction[]
+  settings               UserSettings?
 }
 
 model UserSettings {

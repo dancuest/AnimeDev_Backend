@@ -16,6 +16,12 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @Transform(normalizeOptionalString)
+  @IsString()
+  @MinLength(2)
+  nickname?: string;
+
+  @IsOptional()
+  @Transform(normalizeOptionalString)
   @IsEmail()
   email?: string;
 

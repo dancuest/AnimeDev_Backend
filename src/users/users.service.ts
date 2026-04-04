@@ -5,6 +5,7 @@ import { AnimeService } from '../anime/anime.service';
 
 type UpdateProfileDto = {
   displayName?: string;
+  nickname?: string;
   email?: string;
   avatarUrl?: string;
   coverImageUrl?: string;
@@ -37,6 +38,7 @@ export class UsersService {
           deviceId: true,
           email: true,
           displayName: true,
+          nickname: true,
           avatarUrl: true,
           coverImageUrl: true,
           createdAt: true,
@@ -61,6 +63,7 @@ export class UsersService {
     const emailUpdateValue =
       dto.email === undefined ? undefined : normalizedEmail ? normalizedEmail : null;
 
+    const nicknameUpdateValue = this.normalizeOptionalStringField(dto.nickname);
     const avatarUrlUpdateValue = this.normalizeOptionalStringField(dto.avatarUrl);
     const coverImageUrlUpdateValue = this.normalizeOptionalStringField(dto.coverImageUrl);
 
@@ -69,6 +72,7 @@ export class UsersService {
         where: { id: userId },
         data: {
           displayName: dto.displayName?.trim() || undefined,
+          nickname: nicknameUpdateValue,
           email: emailUpdateValue,
           avatarUrl: avatarUrlUpdateValue,
           coverImageUrl: coverImageUrlUpdateValue,
@@ -78,6 +82,7 @@ export class UsersService {
           deviceId: true,
           email: true,
           displayName: true,
+          nickname: true,
           avatarUrl: true,
           coverImageUrl: true,
           createdAt: true,
