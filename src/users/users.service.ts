@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InteractionType } from '@prisma/client';
+import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnimeService } from '../anime/anime.service';
 
@@ -20,6 +21,11 @@ type UpdateSettingsDto = {
   toggles?: any;
 };
 
+type ChangePasswordDto = {
+  currentPassword: string;
+  newPassword: string;
+};
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -38,7 +44,7 @@ export class UsersService {
           deviceId: true,
           email: true,
           displayName: true,
-          nickname: true,
+          nickname: true,        // ← AGREGADO
           avatarUrl: true,
           coverImageUrl: true,
           createdAt: true,
@@ -96,6 +102,41 @@ export class UsersService {
       completedTrivias: stats.completedTrivias,
       favoriteCount: stats.favoriteCount,
     };
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, password: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Usuario no encontrado');
+    }
+
+    if (!user.password) {
+      throw new UnauthorizedException(
+        'Esta cuenta no tiene contraseña configurada. Usa el flujo de recuperación.',
+      );
+    }
+
+    const isCurrentPasswordValid = this.verifyPassword(
+      dto.currentPassword,
+      user.password,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('La contraseña actual es incorrecta');
+    }
+
+    const newHashedPassword = this.hashPassword(dto.newPassword);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: newHashedPassword },
+    });
+
+    return { success: true, message: 'Contraseña actualizada correctamente' };
   }
 
   async getMySettings(userId: string) {
@@ -250,5 +291,22 @@ export class UsersService {
 
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private hashPassword(password: string): string {
+    const salt = randomBytes(16).toString('hex');
+    const hash = scryptSync(password, salt, 64).toString('hex');
+    return `${salt}:${hash}`;
+  }
+
+  private verifyPassword(password: string, storedHash: string): boolean {
+    const [salt, originalHash] = storedHash.split(':');
+    if (!salt || !originalHash) return false;
+
+    const computedHash = scryptSync(password, salt, 64);
+    const originalHashBuffer = Buffer.from(originalHash, 'hex');
+    if (computedHash.length !== originalHashBuffer.length) return false;
+
+    return timingSafeEqual(computedHash, originalHashBuffer);
   }
 }

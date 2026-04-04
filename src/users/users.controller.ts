@@ -2,14 +2,18 @@ import { Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-
 import { AuthGuard } from '@nestjs/passport';
+
+class ChangePasswordDto {
+  currentPassword: string;
+  newPassword: string;
+}
 
 @Controller('users')
 export class UsersController {
   constructor(private readonly users: UsersService) {}
 
-  @UseGuards(AuthGuard('jwt')) 
+  @UseGuards(AuthGuard('jwt'))
   @Get('me')
   me(@Req() req: any) {
     return this.users.getMe(req.user.userId);
@@ -31,5 +35,14 @@ export class UsersController {
   @Put('me/settings')
   updateSettings(@Req() req: any, @Body() dto: UpdateSettingsDto) {
     return this.users.updateMySettings(req.user.userId, dto);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Put('me/change-password')
+  changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
+    return this.users.changePassword(req.user.userId, {
+      currentPassword: dto.currentPassword,
+      newPassword: dto.newPassword,
+    });
   }
 }
