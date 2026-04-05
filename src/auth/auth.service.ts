@@ -54,6 +54,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid token');
     }
 
+    if (currentUser.email) {
+      throw new ConflictException(
+        'La sesión actual ya está registrada. Inicia el registro desde una sesión nueva de invitado.',
+      );
+    }
+
     const normalizedEmail = this.normalizeEmail(dto.email);
 
     const existingUser = await this.prisma.user.findUnique({
