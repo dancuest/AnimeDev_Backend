@@ -1,8 +1,8 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InteractionType } from '@prisma/client';
-import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnimeService } from '../anime/anime.service';
+import * as bcrypt from 'bcrypt';
 
 type UpdateProfileDto = {
   displayName?: string;
@@ -19,11 +19,6 @@ type UpdateSettingsDto = {
   preferredGenres?: number[];
   preferredDurations?: string[];
   toggles?: any;
-};
-
-type ChangePasswordDto = {
-  currentPassword: string;
-  newPassword: string;
 };
 
 @Injectable()
@@ -44,7 +39,7 @@ export class UsersService {
           deviceId: true,
           email: true,
           displayName: true,
-          nickname: true,        // ← AGREGADO
+          nickname: true,
           avatarUrl: true,
           coverImageUrl: true,
           createdAt: true,
@@ -102,41 +97,6 @@ export class UsersService {
       completedTrivias: stats.completedTrivias,
       favoriteCount: stats.favoriteCount,
     };
-  }
-
-  async changePassword(userId: string, dto: ChangePasswordDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, password: true },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException('Usuario no encontrado');
-    }
-
-    if (!user.password) {
-      throw new UnauthorizedException(
-        'Esta cuenta no tiene contraseña configurada. Usa el flujo de recuperación.',
-      );
-    }
-
-    const isCurrentPasswordValid = this.verifyPassword(
-      dto.currentPassword,
-      user.password,
-    );
-
-    if (!isCurrentPasswordValid) {
-      throw new UnauthorizedException('La contraseña actual es incorrecta');
-    }
-
-    const newHashedPassword = this.hashPassword(dto.newPassword);
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { password: newHashedPassword },
-    });
-
-    return { success: true, message: 'Contraseña actualizada correctamente' };
   }
 
   async getMySettings(userId: string) {
@@ -208,6 +168,40 @@ export class UsersService {
       ...settings,
       preferredGenreDetails,
     };
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, password: true },
+    });
+
+    if (!user || !user.password) {
+      throw new Error('Este usuario no tiene contraseña configurada.');
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, user.password);
+
+    if (!isValid) {
+      throw new Error('La contraseña actual es incorrecta.');
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('La nueva contraseña debe tener al menos 6 caracteres.');
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: newHash },
+    });
+
+    return { message: 'Contraseña actualizada correctamente.' };
   }
 
   private async resolvePreferredGenreDetails(preferredGenres: number[]) {
@@ -291,22 +285,5 @@ export class UsersService {
 
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
-  }
-
-  private hashPassword(password: string): string {
-    const salt = randomBytes(16).toString('hex');
-    const hash = scryptSync(password, salt, 64).toString('hex');
-    return `${salt}:${hash}`;
-  }
-
-  private verifyPassword(password: string, storedHash: string): boolean {
-    const [salt, originalHash] = storedHash.split(':');
-    if (!salt || !originalHash) return false;
-
-    const computedHash = scryptSync(password, salt, 64);
-    const originalHashBuffer = Buffer.from(originalHash, 'hex');
-    if (computedHash.length !== originalHashBuffer.length) return false;
-
-    return timingSafeEqual(computedHash, originalHashBuffer);
   }
 }

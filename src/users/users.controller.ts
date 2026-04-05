@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Put, Req, UseGuards, BadRequestException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -39,10 +39,15 @@ export class UsersController {
 
   @UseGuards(AuthGuard('jwt'))
   @Put('me/change-password')
-  changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
-    return this.users.changePassword(req.user.userId, {
-      currentPassword: dto.currentPassword,
-      newPassword: dto.newPassword,
-    });
+  async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
+    try {
+      return await this.users.changePassword(
+        req.user.userId,
+        dto.currentPassword,
+        dto.newPassword,
+      );
+    } catch (e: any) {
+      throw new BadRequestException(e.message);
+    }
   }
 }
