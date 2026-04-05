@@ -28,7 +28,8 @@ export class InteractionsService {
 
     if (normalizedType === InteractionType.TRIVIA_SCORE) {
       const score = dto.payload?.score;
-      if (typeof score !== 'number' || Number.isNaN(score) || score < 0 || score > 10) {
+
+      if (typeof score !== 'number' || Number.isNaN(score) || score < 0 || score > 100) {
         throw new BadRequestException(
           'TRIVIA_SCORE payload must include numeric score between 0 and 10',
         );

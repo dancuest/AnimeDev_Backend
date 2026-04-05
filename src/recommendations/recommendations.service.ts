@@ -23,14 +23,23 @@ type RecommendationMeta = {
 export class RecommendationsService {
   private readonly logger = new Logger(RecommendationsService.name);
 
+  /**
+   * Base interaction weights used to build user vectors.
+   *
+   * For TRIVIA_SCORE, the value declared here works as a fallback when the
+   * interaction payload does not include a numeric score. When the payload
+   * does contain score, the effective weight is computed in buildUserVectors
+   * as payload.score / TRIVIA_SCORE_NORMALIZER.
+   */
   private readonly WEIGHTS: Record<InteractionType, number> = {
     FAVORITE: 5,
     VIEW: 1,
-    TRIVIA_SCORE: 0,
+    TRIVIA_SCORE: 2,
     DISLIKE: -3,
     UNFAVORITE: -2,
   };
 
+  private readonly TRIVIA_SCORE_NORMALIZER = 2;
   private readonly MIN_GLOBAL_INTERACTIONS = 5;
   private readonly MIN_USER_INTERACTIONS_FOR_COLLAB = 3;
 
@@ -80,6 +89,7 @@ export class RecommendationsService {
     const hasPreferences =
       settings.preferredGenres.length > 0 ||
       settings.preferredDurations.length > 0;
+
     const hasDemographicSignals =
       settings.ageRange > 0 ||
       settings.genderCode > 0 ||
@@ -126,10 +136,11 @@ export class RecommendationsService {
       this.logger.warn(
         `Collaborative/hybrid candidate details were empty for user ${userId}, switching to fallback`,
       );
-      return this.getTopFallback(requestId, 'empty_hybrid_details');
+      return this.getTopFallback(requestId, "empty_hybrid_details");
     }
 
     const normalizedCollaborative = this.minMaxNormalize(collaborativeScores);
+
     const reranked = animeDetails
       .map((anime) => {
         const collaborativeScore = normalizedCollaborative.get(anime.id) ?? 0;
@@ -162,7 +173,7 @@ export class RecommendationsService {
       this.logger.warn(
         `Collaborative/hybrid scoring produced no results for user ${userId}, switching to fallback`,
       );
-      return this.getTopFallback(requestId, 'empty_hybrid_scores');
+      return this.getTopFallback(requestId, "empty_hybrid_scores");
     }
 
     return {
@@ -187,7 +198,7 @@ export class RecommendationsService {
 
     for (const record of allInteractions) {
       if (!userVectors.has(record.userId)) {
-        userVectors.set(record.userId, new Map<number, number>());
+        userVectors.set(record.userId, new Map());
       }
 
       const animeScores = userVectors.get(record.userId)!;
@@ -199,8 +210,14 @@ export class RecommendationsService {
         typeof record.payload === "object"
       ) {
         const payloadData = record.payload as { score?: number };
+
+        // The trivia payload score comes from correct answers over total questions
+        // in a 0..10 scale and is divided by TRIVIA_SCORE_NORMALIZER so it remains
+        // lower than a FAVORITE (5) but still contributes meaningfully.
         scoreToAdd =
-          payloadData.score !== undefined ? payloadData.score / 2 : 2;
+          payloadData.score !== undefined
+            ? payloadData.score / this.TRIVIA_SCORE_NORMALIZER
+            : this.WEIGHTS[record.type];
       }
 
       const currentScore = animeScores.get(record.animeId) || 0;
@@ -215,6 +232,7 @@ export class RecommendationsService {
     userVectors: Map<string, Map<number, number>>,
   ): Map<number, number> {
     const currentUserVector = userVectors.get(userId);
+
     if (!currentUserVector || currentUserVector.size === 0) {
       return new Map();
     }
@@ -223,10 +241,12 @@ export class RecommendationsService {
 
     for (const [otherUserId, otherUserVector] of userVectors.entries()) {
       if (otherUserId === userId) continue;
+
       const similarity = calculateCosineSimilarity(
         currentUserVector,
         otherUserVector,
       );
+
       userSimilarities.set(otherUserId, similarity);
     }
 
@@ -249,6 +269,7 @@ export class RecommendationsService {
           animeId,
           (scoreSums.get(animeId) || 0) + similarity * score,
         );
+
         absSimilaritySums.set(
           animeId,
           (absSimilaritySums.get(animeId) || 0) + Math.abs(similarity),
@@ -257,9 +278,11 @@ export class RecommendationsService {
     }
 
     const predictedScores = new Map<number, number>();
+
     for (const [animeId, scoreSum] of scoreSums.entries()) {
       const similarityTotal = absSimilaritySums.get(animeId) || 0;
       if (similarityTotal === 0) continue;
+
       predictedScores.set(animeId, scoreSum / similarityTotal);
     }
 
@@ -289,6 +312,7 @@ export class RecommendationsService {
           settings.preferredDurations,
         );
         const demographicScore = this.getDemographicScore(anime, settings);
+
         const popularityPrior =
           topPoolSize > 1 ? 1 - index / (topPoolSize - 1) : 1;
 
@@ -305,8 +329,10 @@ export class RecommendationsService {
       .map((item) => item.anime);
 
     if (reranked.length === 0) {
-      this.logger.warn('Cold-start reranking produced no results, switching to fallback');
-      return this.getTopFallback(requestId, 'empty_cold_start');
+      this.logger.warn(
+        "Cold-start reranking produced no results, switching to fallback",
+      );
+      return this.getTopFallback(requestId, "empty_cold_start");
     }
 
     return {
@@ -319,10 +345,9 @@ export class RecommendationsService {
     };
   }
 
-  private async getTopFallback(requestId?: string, reason = 'no_signal') {
-    this.logger.warn(
-      `Using top-anime fallback strategy (reason=${reason})`,
-    );
+  private async getTopFallback(requestId?: string, reason = "no_signal") {
+    this.logger.warn(`Using top-anime fallback strategy (reason=${reason})`);
+
     const top = await this.animeService.getTop(10, requestId);
 
     return {
@@ -343,6 +368,7 @@ export class RecommendationsService {
     const max = Math.max(...values);
 
     const normalized = new Map<number, number>();
+
     for (const [animeId, score] of scores.entries()) {
       if (max === min) {
         normalized.set(animeId, 1);
@@ -361,6 +387,7 @@ export class RecommendationsService {
     const animeGenreIds = new Set(
       anime.genres.map((genre) => Number(genre.id)),
     );
+
     const matches = preferredGenres.filter((genreId) =>
       animeGenreIds.has(genreId),
     ).length;
@@ -374,6 +401,7 @@ export class RecommendationsService {
     const preferredSet = new Set(
       preferredDurations.map((duration) => duration.toUpperCase()),
     );
+
     return preferredSet.has(anime.durationType.toUpperCase()) ? 1 : 0;
   }
 
@@ -458,6 +486,7 @@ export class RecommendationsService {
     );
 
     const animeList: AnimeDto[] = [];
+
     for (const result of details) {
       if (result.status === "fulfilled") {
         animeList.push(result.value.data);
