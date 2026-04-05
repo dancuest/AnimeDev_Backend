@@ -7,5 +7,6 @@ import { InteractionsService } from './interactions.service';
   imports: [PrismaModule],
   controllers: [InteractionsController],
   providers: [InteractionsService],
+  exports: [InteractionsService],
 })
 export class InteractionsModule {}

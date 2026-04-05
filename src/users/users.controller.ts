@@ -7,12 +7,19 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Request } from 'express';
+import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 
-import { ChangePasswordDto } from './dto/change-password.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { UsersService } from './users.service';
+
+class ChangePasswordDto {
+  currentPassword: string;
+  newPassword: string;
+}
 
 @Controller('users')
 export class UsersController {
@@ -42,6 +49,25 @@ export class UsersController {
     return this.users.updateMySettings(req.user.userId, dto);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('me/favorites')
+  @ApiOperation({
+    summary: 'Get current user favorite anime IDs derived from interactions',
+  })
+  async getMyFavorites(
+    @Req() req: Request & { user?: { userId: string } },
+  ) {
+    const favoriteAnimeIds = await this.users.getFavoriteAnimeIds(
+      req.user!.userId,
+    );
+
+    return {
+      data: favoriteAnimeIds,
+      count: favoriteAnimeIds.length,
+    };
+  }
+
   @UseGuards(AuthGuard('jwt'))
   @Put('me/change-password')
   async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
@@ -52,10 +78,7 @@ export class UsersController {
         dto.newPassword,
       );
     } catch (e: any) {
-      console.error('CHANGE_PASSWORD_ERROR ->', e?.message);
-      throw new BadRequestException(
-        e?.message || 'No se pudo cambiar la contraseña',
-      );
+      throw new BadRequestException(e.message);
     }
   }
 }

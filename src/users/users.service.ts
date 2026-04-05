@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnimeService } from '../anime/anime.service';
+import { InteractionsService } from '../interactions/interactions.service';
 
 type UpdateProfileDto = {
   displayName?: string;
@@ -30,6 +31,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly animeService: AnimeService,
+    private readonly interactionsService: InteractionsService,
   ) {}
 
   async getMe(userId: string) {
@@ -170,6 +172,10 @@ export class UsersService {
       ...settings,
       preferredGenreDetails,
     };
+  }
+
+  async getFavoriteAnimeIds(userId: string): Promise<number[]> {
+    return this.interactionsService.getFavoriteAnimeIds(userId);
   }
 
   async changePassword(
