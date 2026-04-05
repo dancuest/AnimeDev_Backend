@@ -1,13 +1,18 @@
-import { Body, Controller, Get, Put, Req, UseGuards, BadRequestException } from '@nestjs/common';
-import { UsersService } from './users.service';
-import { UpdateSettingsDto } from './dto/update-settings.dto';
-import { UpdateProfileDto } from './dto/update-profile.dto';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 
-class ChangePasswordDto {
-  currentPassword: string;
-  newPassword: string;
-}
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { UsersService } from './users.service';
 
 @Controller('users')
 export class UsersController {
@@ -47,7 +52,10 @@ export class UsersController {
         dto.newPassword,
       );
     } catch (e: any) {
-      throw new BadRequestException(e.message);
+      console.error('CHANGE_PASSWORD_ERROR ->', e?.message);
+      throw new BadRequestException(
+        e?.message || 'No se pudo cambiar la contraseña',
+      );
     }
   }
 }

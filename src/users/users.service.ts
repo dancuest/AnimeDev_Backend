@@ -305,12 +305,10 @@ export class UsersService {
       return false;
     }
 
-    // Nuevo formato oficial del proyecto: scrypt -> "salt:hash"
     if (storedHash.includes(':')) {
       return this.verifyScryptPassword(password, storedHash);
     }
 
-    // Compatibilidad defensiva con hashes legacy bcrypt
     try {
       return await bcrypt.compare(password, storedHash);
     } catch {
