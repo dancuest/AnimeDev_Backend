@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InteractionType } from '@prisma/client';
+import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import * as bcrypt from 'bcrypt';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnimeService } from '../anime/anime.service';
-import * as bcrypt from 'bcrypt';
 
 type UpdateProfileDto = {
   displayName?: string;
@@ -184,7 +186,10 @@ export class UsersService {
       throw new Error('Este usuario no tiene contraseña configurada.');
     }
 
-    const isValid = await bcrypt.compare(currentPassword, user.password);
+    const isValid = await this.verifyExistingPassword(
+      currentPassword,
+      user.password,
+    );
 
     if (!isValid) {
       throw new Error('La contraseña actual es incorrecta.');
@@ -194,7 +199,11 @@ export class UsersService {
       throw new Error('La nueva contraseña debe tener al menos 6 caracteres.');
     }
 
-    const newHash = await bcrypt.hash(newPassword, 10);
+    if (currentPassword === newPassword) {
+      throw new Error('La nueva contraseña no puede ser igual a la actual.');
+    }
+
+    const newHash = this.hashPassword(newPassword);
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -211,7 +220,6 @@ export class UsersService {
 
     try {
       const genresCatalog = await this.animeService.getGenres(true);
-
       const genreMap = new Map(
         genresCatalog.data.map((genre) => [
           Number(genre.id),
@@ -221,7 +229,9 @@ export class UsersService {
 
       return preferredGenres
         .map((genreId) => genreMap.get(genreId))
-        .filter((genre): genre is { id: number; name: string } => Boolean(genre));
+        .filter(
+          (genre): genre is { id: number; name: string } => Boolean(genre),
+        );
     } catch (error) {
       this.logger.warn('Could not resolve preferred genre details from catalog');
       return [];
@@ -285,5 +295,49 @@ export class UsersService {
 
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private async verifyExistingPassword(
+    password: string,
+    storedHash: string,
+  ): Promise<boolean> {
+    if (!storedHash) {
+      return false;
+    }
+
+    // Nuevo formato oficial del proyecto: scrypt -> "salt:hash"
+    if (storedHash.includes(':')) {
+      return this.verifyScryptPassword(password, storedHash);
+    }
+
+    // Compatibilidad defensiva con hashes legacy bcrypt
+    try {
+      return await bcrypt.compare(password, storedHash);
+    } catch {
+      return false;
+    }
+  }
+
+  private hashPassword(password: string): string {
+    const salt = randomBytes(16).toString('hex');
+    const hash = scryptSync(password, salt, 64).toString('hex');
+    return `${salt}:${hash}`;
+  }
+
+  private verifyScryptPassword(password: string, storedHash: string): boolean {
+    const [salt, originalHash] = storedHash.split(':');
+
+    if (!salt || !originalHash) {
+      return false;
+    }
+
+    const computedHash = scryptSync(password, salt, 64);
+    const originalHashBuffer = Buffer.from(originalHash, 'hex');
+
+    if (computedHash.length !== originalHashBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(computedHash, originalHashBuffer);
   }
 }
