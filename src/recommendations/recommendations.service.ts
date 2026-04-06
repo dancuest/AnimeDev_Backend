@@ -42,6 +42,7 @@ export class RecommendationsService {
   private readonly TRIVIA_SCORE_NORMALIZER = 2;
   private readonly MIN_GLOBAL_INTERACTIONS = 5;
   private readonly MIN_USER_INTERACTIONS_FOR_COLLAB = 3;
+  private readonly COLD_START_POOL_LIMIT = 10;
 
   // Hybrid weights: collaborative remains dominant when user has enough history.
   private readonly HYBRID_CF_WEIGHT = 0.75;
@@ -298,51 +299,62 @@ export class RecommendationsService {
       return this.getTopFallback(requestId, "no_personalization_signal");
     }
 
-    const topPool = await this.animeService.getTop(40, requestId);
-    const topPoolSize = topPool.data.length;
-
-    const reranked = topPool.data
-      .map((anime, index) => {
-        const genreScore = this.getGenreMatchScore(
-          anime,
-          settings.preferredGenres,
-        );
-        const durationScore = this.getDurationMatchScore(
-          anime,
-          settings.preferredDurations,
-        );
-        const demographicScore = this.getDemographicScore(anime, settings);
-
-        const popularityPrior =
-          topPoolSize > 1 ? 1 - index / (topPoolSize - 1) : 1;
-
-        const finalScore =
-          genreScore * this.COLD_START_GENRE_WEIGHT +
-          durationScore * this.COLD_START_DURATION_WEIGHT +
-          demographicScore * this.COLD_START_DEMOGRAPHIC_WEIGHT +
-          popularityPrior * 0.05;
-
-        return { anime, finalScore };
-      })
-      .sort((a, b) => b.finalScore - a.finalScore)
-      .slice(0, 10)
-      .map((item) => item.anime);
-
-    if (reranked.length === 0) {
-      this.logger.warn(
-        "Cold-start reranking produced no results, switching to fallback",
+    try {
+      const topPool = await this.animeService.getTop(
+        this.COLD_START_POOL_LIMIT,
+        requestId,
       );
-      return this.getTopFallback(requestId, "empty_cold_start");
-    }
 
-    return {
-      data: reranked,
-      meta: {
-        algorithm: "hybrid_cosine_preferences",
-        strategy: "cold_start",
-        count: reranked.length,
-      } satisfies RecommendationMeta,
-    };
+      const topPoolSize = topPool.data.length;
+
+      const reranked = topPool.data
+        .map((anime, index) => {
+          const genreScore = this.getGenreMatchScore(
+            anime,
+            settings.preferredGenres,
+          );
+          const durationScore = this.getDurationMatchScore(
+            anime,
+            settings.preferredDurations,
+          );
+          const demographicScore = this.getDemographicScore(anime, settings);
+
+          const popularityPrior =
+            topPoolSize > 1 ? 1 - index / (topPoolSize - 1) : 1;
+
+          const finalScore =
+            genreScore * this.COLD_START_GENRE_WEIGHT +
+            durationScore * this.COLD_START_DURATION_WEIGHT +
+            demographicScore * this.COLD_START_DEMOGRAPHIC_WEIGHT +
+            popularityPrior * 0.05;
+
+          return { anime, finalScore };
+        })
+        .sort((a, b) => b.finalScore - a.finalScore)
+        .slice(0, 10)
+        .map((item) => item.anime);
+
+      if (reranked.length === 0) {
+        this.logger.warn(
+          "Cold-start reranking produced no results, switching to fallback",
+        );
+        return this.getTopFallback(requestId, "empty_cold_start");
+      }
+
+      return {
+        data: reranked,
+        meta: {
+          algorithm: "hybrid_cosine_preferences",
+          strategy: "cold_start",
+          count: reranked.length,
+        } satisfies RecommendationMeta,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Cold-start pool request failed, switching to fallback`,
+      );
+      return this.getTopFallback(requestId, "cold_start_upstream_failure");
+    }
   }
 
   private async getTopFallback(requestId?: string, reason = "no_signal") {
