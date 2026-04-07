@@ -3,6 +3,7 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AnimeService } from './anime.service';
 import { GenresQueryDto } from './dto/anime-query.dto';
+import { AnimeGenreCatalogResponseDto } from './dto/anime-swagger.dto';
 
 @ApiTags('genres')
 @Controller('genres')
@@ -10,8 +11,11 @@ export class GenresController {
   constructor(private readonly animeService: AnimeService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get anime genres' })
-  @ApiOkResponse({ description: 'Returns list of anime genres.' })
+  @ApiOperation({ summary: 'Get anime genres catalog' })
+  @ApiOkResponse({
+    type: AnimeGenreCatalogResponseDto,
+    description: 'Returns list of anime genres',
+  })
   getGenres(@Query() query: GenresQueryDto, @Req() req: Request) {
     return this.animeService.getGenres(query.includeAdult ?? true, req.requestId);
   }

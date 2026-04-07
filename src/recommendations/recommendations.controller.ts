@@ -1,30 +1,61 @@
-import { Controller, Get, Req, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Req,
+  UseGuards,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { Request } from 'express';
 import { RecommendationsService } from './recommendations.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RecommendationsResponseDto } from './dto/recommendations-swagger.dto';
 
 @ApiTags('recommendations')
+@ApiBearerAuth('access-token')
 @Controller('recommendations')
 export class RecommendationsController {
-    constructor(private readonly recommendationsService: RecommendationsService) { }
+  constructor(
+    private readonly recommendationsService: RecommendationsService,
+  ) {}
 
-    @UseGuards(JwtAuthGuard)
-    @ApiBearerAuth()
-    @Get('adaptive')
-    @ApiOperation({ summary: 'Get adaptive recommendations using Cosine Similarity based on User Interactions' })
-    @ApiOkResponse({ description: 'Returns personalized list of anime.' })
-    async getAdaptiveRecommendations(@Req() req: Request & { user?: { userId: string } }) {
-        const userId = req.user?.userId;
-        if (!userId) {
-            throw new HttpException('User not found in request', HttpStatus.UNAUTHORIZED);
-        }
+  @UseGuards(JwtAuthGuard)
+  @Get('adaptive')
+  @ApiOperation({
+    summary:
+      'Get adaptive recommendations using cosine similarity and preference signals',
+  })
+  @ApiOkResponse({
+    type: RecommendationsResponseDto,
+    description: 'Returns personalized anime recommendations plus meta strategy',
+  })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
+  async getAdaptiveRecommendations(
+    @Req() req: Request & { user?: { userId: string } },
+  ) {
+    const userId = req.user?.userId;
 
-        // As in other controllers, getting requestId if available
-        const requestId = (req as any).requestId;
-
-        const recommendations = await this.recommendationsService.getAdaptiveRecommendations(userId, requestId);
-
-        return recommendations;
+    if (!userId) {
+      throw new HttpException(
+        'User not found in request',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
+
+    const requestId = (req as any).requestId;
+    const recommendations =
+      await this.recommendationsService.getAdaptiveRecommendations(
+        userId,
+        requestId,
+      );
+
+    return recommendations;
+  }
 }
