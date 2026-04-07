@@ -26,34 +26,43 @@ export class RecommendationsService {
   /**
    * Base interaction weights used to build user vectors.
    *
-   * For TRIVIA_SCORE, the value declared here works as a fallback when the
-   * interaction payload does not include a numeric score. When the payload
-   * does contain score, the effective weight is computed in buildUserVectors
-   * as payload.score / TRIVIA_SCORE_NORMALIZER.
+   * For TRIVIA_SCORE:
+   * - if payload includes score and totalQuestions, the effective weight is
+   *   calculated from accuracy: (score / totalQuestions) * TRIVIA_SCORE_MAX_WEIGHT
+   * - if payload includes score but not totalQuestions, the fallback is
+   *   score / TRIVIA_SCORE_NORMALIZER
+   * - if payload does not include a valid numeric score, the map value below
+   *   works as a final fallback
    */
   private readonly WEIGHTS: Record<InteractionType, number> = {
     FAVORITE: 5,
-    VIEW: 1,
+    VIEW: 0.35,
     TRIVIA_SCORE: 2,
     DISLIKE: -3,
     UNFAVORITE: -2,
   };
 
   private readonly TRIVIA_SCORE_NORMALIZER = 2;
+  private readonly TRIVIA_SCORE_MAX_WEIGHT = 3;
   private readonly MIN_GLOBAL_INTERACTIONS = 5;
   private readonly MIN_USER_INTERACTIONS_FOR_COLLAB = 3;
-  private readonly COLD_START_POOL_LIMIT = 10;
+  private readonly COLD_START_POOL_LIMIT = 25;
 
-  // Hybrid weights: collaborative remains dominant when user has enough history.
-  private readonly HYBRID_CF_WEIGHT = 0.75;
-  private readonly HYBRID_GENRE_WEIGHT = 0.17;
-  private readonly HYBRID_DURATION_WEIGHT = 0.06;
-  private readonly HYBRID_DEMOGRAPHIC_WEIGHT = 0.02;
+  // Hybrid weights tuned to reduce collaborative noise and respect user preferences more.
+  private readonly HYBRID_CF_WEIGHT = 0.6;
+  private readonly HYBRID_GENRE_WEIGHT = 0.25;
+  private readonly HYBRID_DURATION_WEIGHT = 0.1;
+  private readonly HYBRID_DEMOGRAPHIC_WEIGHT = 0.05;
 
-  // Cold start weights: preferences are primary, demographics are only tiebreaker.
-  private readonly COLD_START_GENRE_WEIGHT = 0.65;
-  private readonly COLD_START_DURATION_WEIGHT = 0.25;
+  // Cold start weights: explicit preferences dominate, demographics are tiebreaker only.
+  private readonly COLD_START_GENRE_WEIGHT = 0.72;
+  private readonly COLD_START_DURATION_WEIGHT = 0.18;
   private readonly COLD_START_DEMOGRAPHIC_WEIGHT = 0.1;
+
+  // Genre ids used to penalize "generic drama match only" cases in cold start.
+  private readonly GENERIC_GENRE_IDS = new Set([8]); // Drama
+  private readonly ACTION_HEAVY_GENRE_IDS = new Set([1, 2, 10, 24, 30, 41]); // Action, Adventure, Fantasy, Sci-Fi, Sports, Suspense
+  private readonly NICHE_PREFERENCE_GENRE_IDS = new Set([19, 22, 26, 41, 50, 60]); // Music, Romance, Girls Love, Suspense, Adult Cast, Idols (Female)
 
   constructor(
     private readonly prisma: PrismaService,
@@ -126,7 +135,7 @@ export class RecommendationsService {
 
     const sortedCollaborative = Array.from(collaborativeScores.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 40);
+      .slice(0, 60);
 
     const animeDetails = await this.fetchAnimeDetails(
       sortedCollaborative.map(([animeId]) => animeId),
@@ -196,29 +205,61 @@ export class RecommendationsService {
     }>,
   ) {
     const userVectors = new Map<string, Map<number, number>>();
+    const seenViews = new Map<string, Set<number>>();
 
     for (const record of allInteractions) {
       if (!userVectors.has(record.userId)) {
         userVectors.set(record.userId, new Map());
       }
 
+      if (record.type === InteractionType.VIEW) {
+        if (!seenViews.has(record.userId)) {
+          seenViews.set(record.userId, new Set());
+        }
+
+        const viewsForUser = seenViews.get(record.userId)!;
+
+        if (viewsForUser.has(record.animeId)) {
+          continue;
+        }
+
+        viewsForUser.add(record.animeId);
+      }
+
       const animeScores = userVectors.get(record.userId)!;
       let scoreToAdd = this.WEIGHTS[record.type];
 
       if (
-        record.type === "TRIVIA_SCORE" &&
+        record.type === InteractionType.TRIVIA_SCORE &&
         record.payload &&
         typeof record.payload === "object"
       ) {
-        const payloadData = record.payload as { score?: number };
+        const payloadData = record.payload as {
+          score?: number;
+          totalQuestions?: number;
+        };
 
-        // The trivia payload score comes from correct answers over total questions
-        // in a 0..10 scale and is divided by TRIVIA_SCORE_NORMALIZER so it remains
-        // lower than a FAVORITE (5) but still contributes meaningfully.
-        scoreToAdd =
-          payloadData.score !== undefined
-            ? payloadData.score / this.TRIVIA_SCORE_NORMALIZER
-            : this.WEIGHTS[record.type];
+        const numericScore = payloadData.score;
+        const totalQuestions = payloadData.totalQuestions;
+
+        if (typeof numericScore === "number" && !Number.isNaN(numericScore)) {
+          if (
+            typeof totalQuestions === "number" &&
+            !Number.isNaN(totalQuestions) &&
+            totalQuestions > 0
+          ) {
+            const accuracy = Math.max(
+              0,
+              Math.min(1, numericScore / totalQuestions),
+            );
+
+            scoreToAdd = accuracy * this.TRIVIA_SCORE_MAX_WEIGHT;
+          } else {
+            scoreToAdd =
+              Math.min(Math.max(numericScore, 0), 10) /
+              this.TRIVIA_SCORE_NORMALIZER;
+          }
+        }
       }
 
       const currentScore = animeScores.get(record.animeId) || 0;
@@ -306,9 +347,14 @@ export class RecommendationsService {
       );
 
       const topPoolSize = topPool.data.length;
+      const hasNichePreferences = this.hasNichePreferences(settings.preferredGenres);
 
       const reranked = topPool.data
         .map((anime, index) => {
+          const genreMatchCount = this.countGenreMatches(
+            anime,
+            settings.preferredGenres,
+          );
           const genreScore = this.getGenreMatchScore(
             anime,
             settings.preferredGenres,
@@ -322,14 +368,20 @@ export class RecommendationsService {
           const popularityPrior =
             topPoolSize > 1 ? 1 - index / (topPoolSize - 1) : 1;
 
+          const genericDramaPenalty = hasNichePreferences
+            ? this.getGenericDramaPenalty(anime, settings.preferredGenres)
+            : 0;
+
           const finalScore =
             genreScore * this.COLD_START_GENRE_WEIGHT +
             durationScore * this.COLD_START_DURATION_WEIGHT +
             demographicScore * this.COLD_START_DEMOGRAPHIC_WEIGHT +
-            popularityPrior * 0.05;
+            popularityPrior * 0.03 -
+            genericDramaPenalty;
 
-          return { anime, finalScore };
+          return { anime, finalScore, genreMatchCount };
         })
+        .filter((item) => item.genreMatchCount > 0)
         .sort((a, b) => b.finalScore - a.finalScore)
         .slice(0, 10)
         .map((item) => item.anime);
@@ -355,6 +407,52 @@ export class RecommendationsService {
       );
       return this.getTopFallback(requestId, "cold_start_upstream_failure");
     }
+  }
+
+  private hasNichePreferences(preferredGenres: number[]) {
+    return preferredGenres.some((genreId) =>
+      this.NICHE_PREFERENCE_GENRE_IDS.has(genreId),
+    );
+  }
+
+  private countGenreMatches(anime: AnimeDto, preferredGenres: number[]) {
+    if (!preferredGenres.length) return 0;
+
+    const animeGenreIds = new Set(
+      anime.genres.map((genre) => Number(genre.id)),
+    );
+
+    return preferredGenres.filter((genreId) => animeGenreIds.has(genreId))
+      .length;
+  }
+
+  private getGenericDramaPenalty(
+    anime: AnimeDto,
+    preferredGenres: number[],
+  ) {
+    const animeGenreIds = new Set(
+      anime.genres.map((genre) => Number(genre.id)),
+    );
+
+    const matchedGenres = preferredGenres.filter((genreId) =>
+      animeGenreIds.has(genreId),
+    );
+
+    if (matchedGenres.length !== 1) {
+      return 0;
+    }
+
+    const onlyMatchedGenre = matchedGenres[0];
+    const onlyGenericDramaMatch = this.GENERIC_GENRE_IDS.has(onlyMatchedGenre);
+    const hasActionHeavyGenres = Array.from(this.ACTION_HEAVY_GENRE_IDS).some(
+      (genreId) => animeGenreIds.has(genreId),
+    );
+
+    if (onlyGenericDramaMatch && hasActionHeavyGenres) {
+      return 0.22;
+    }
+
+    return 0;
   }
 
   private async getTopFallback(requestId?: string, reason = "no_signal") {
@@ -396,13 +494,7 @@ export class RecommendationsService {
   private getGenreMatchScore(anime: AnimeDto, preferredGenres: number[]) {
     if (!preferredGenres.length) return 0;
 
-    const animeGenreIds = new Set(
-      anime.genres.map((genre) => Number(genre.id)),
-    );
-
-    const matches = preferredGenres.filter((genreId) =>
-      animeGenreIds.has(genreId),
-    ).length;
+    const matches = this.countGenreMatches(anime, preferredGenres);
 
     return matches / preferredGenres.length;
   }
@@ -447,19 +539,19 @@ export class RecommendationsService {
     if (genderCode <= 0) return 0;
 
     const genreIds = new Set(anime.genres.map((genre) => Number(genre.id)));
-    const masculineLeanGenres = [1, 2, 7, 27, 30];
-    const feminineLeanGenres = [8, 22, 36, 41, 50];
+    const feminineLeanGenres = [8, 19, 22, 26, 41, 50, 60];
+    const masculineLeanGenres = [1, 2, 7, 24, 27, 30];
 
     if (genderCode === 1) {
-      return masculineLeanGenres.some((genreId) => genreIds.has(genreId))
+      return feminineLeanGenres.some((genreId) => genreIds.has(genreId))
         ? 1
-        : 0.4;
+        : 0.35;
     }
 
     if (genderCode === 2) {
-      return feminineLeanGenres.some((genreId) => genreIds.has(genreId))
+      return masculineLeanGenres.some((genreId) => genreIds.has(genreId))
         ? 1
-        : 0.4;
+        : 0.35;
     }
 
     return 0.5;
@@ -469,8 +561,8 @@ export class RecommendationsService {
     if (regionCode <= 0) return 0;
 
     const genreIds = new Set(anime.genres.map((genre) => Number(genre.id)));
-    const latinTrendGenres = [1, 4, 10, 24];
-    const asianTrendGenres = [8, 14, 37, 41];
+    const latinTrendGenres = [4, 8, 10, 19, 22];
+    const asianTrendGenres = [8, 19, 22, 37, 41];
 
     if (regionCode <= 2) {
       return latinTrendGenres.some((genreId) => genreIds.has(genreId))

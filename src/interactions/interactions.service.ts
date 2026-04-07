@@ -28,10 +28,30 @@ export class InteractionsService {
 
     if (normalizedType === InteractionType.TRIVIA_SCORE) {
       const score = dto.payload?.score;
+      const totalQuestions = dto.payload?.totalQuestions;
 
-      if (typeof score !== 'number' || Number.isNaN(score) || score < 0 || score > 10) {
+      if (
+        typeof score !== 'number' ||
+        Number.isNaN(score) ||
+        score < 0 ||
+        score > 100
+      ) {
         throw new BadRequestException(
-          'TRIVIA_SCORE payload must include numeric score between 0 and 10',
+          'TRIVIA_SCORE payload must include numeric score between 0 and 100',
+        );
+      }
+
+      if (
+        totalQuestions !== undefined &&
+        (
+          typeof totalQuestions !== 'number' ||
+          Number.isNaN(totalQuestions) ||
+          totalQuestions <= 0 ||
+          totalQuestions > 100
+        )
+      ) {
+        throw new BadRequestException(
+          'TRIVIA_SCORE payload totalQuestions must be numeric between 1 and 100',
         );
       }
     }
