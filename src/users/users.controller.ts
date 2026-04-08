@@ -7,7 +7,6 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { Request } from 'express';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -29,7 +28,7 @@ import {
   UserSettingsResponseDto,
 } from './dto/users-swagger.dto';
 
-@ApiTags('users')
+@ApiTags('usuarios')
 @ApiBearerAuth('access-token')
 @Controller('users')
 export class UsersController {
@@ -37,50 +36,62 @@ export class UsersController {
 
   @UseGuards(AuthGuard('jwt'))
   @Get('me')
-  @ApiOperation({ summary: 'Get current user profile and stats' })
+  @ApiOperation({ summary: 'Obtener el perfil y las estadísticas del usuario actual' })
   @ApiOkResponse({
     type: UserMeResponseDto,
-    description: 'Returns profile data plus trivia and favorites stats',
+    description:
+      'Retorna los datos del perfil junto con las estadísticas de trivias y favoritos.',
   })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
+  @ApiUnauthorizedResponse({
+    description: 'El token Bearer es inexistente o inválido.',
+  })
   me(@Req() req: any) {
     return this.users.getMe(req.user.userId);
   }
 
   @UseGuards(AuthGuard('jwt'))
   @Put('me/profile')
-  @ApiOperation({ summary: 'Update current user profile' })
+  @ApiOperation({ summary: 'Actualizar el perfil del usuario actual' })
   @ApiOkResponse({
     type: UserMeResponseDto,
-    description: 'Returns updated profile data plus trivia and favorites stats',
+    description:
+      'Retorna los datos actualizados del perfil junto con las estadísticas de trivias y favoritos.',
   })
-  @ApiBadRequestResponse({ description: 'Validation failed' })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
+  @ApiBadRequestResponse({ description: 'La validación de los datos falló.' })
+  @ApiUnauthorizedResponse({
+    description: 'El token Bearer es inexistente o inválido.',
+  })
   updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
     return this.users.updateProfile(req.user.userId, dto);
   }
 
   @UseGuards(AuthGuard('jwt'))
   @Get('me/settings')
-  @ApiOperation({ summary: 'Get current user recommendation settings' })
+  @ApiOperation({ summary: 'Obtener la configuración de recomendaciones del usuario actual' })
   @ApiOkResponse({
     type: UserSettingsResponseDto,
-    description: 'Returns current demographic and preference settings',
+    description:
+      'Retorna la configuración actual demográfica y de preferencias.',
   })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
+  @ApiUnauthorizedResponse({
+    description: 'El token Bearer es inexistente o inválido.',
+  })
   getSettings(@Req() req: any) {
     return this.users.getMySettings(req.user.userId);
   }
 
   @UseGuards(AuthGuard('jwt'))
   @Put('me/settings')
-  @ApiOperation({ summary: 'Update current user recommendation settings' })
+  @ApiOperation({ summary: 'Actualizar la configuración de recomendaciones del usuario actual' })
   @ApiOkResponse({
     type: UserSettingsResponseDto,
-    description: 'Returns updated demographic and preference settings',
+    description:
+      'Retorna la configuración demográfica y de preferencias actualizada.',
   })
-  @ApiBadRequestResponse({ description: 'Validation failed' })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
+  @ApiBadRequestResponse({ description: 'La validación de los datos falló.' })
+  @ApiUnauthorizedResponse({
+    description: 'El token Bearer es inexistente o inválido.',
+  })
   updateSettings(@Req() req: any, @Body() dto: UpdateSettingsDto) {
     return this.users.updateMySettings(req.user.userId, dto);
   }
@@ -88,18 +99,20 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @Get('me/favorites')
   @ApiOperation({
-    summary: 'Get current user favorite anime IDs derived from interactions',
+    summary:
+      'Obtener los identificadores de animes favoritos del usuario actual a partir de sus interacciones',
   })
   @ApiOkResponse({
     type: FavoriteIdsResponseDto,
-    description: 'Returns favorite anime ids and total count',
+    description:
+      'Retorna los identificadores de los animes favoritos y la cantidad total.',
   })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
-  async getMyFavorites(
-    @Req() req: Request & { user?: { userId: string } },
-  ) {
+  @ApiUnauthorizedResponse({
+    description: 'El token Bearer es inexistente o inválido.',
+  })
+  async getMyFavorites(@Req() req: any) {
     const favoriteAnimeIds = await this.users.getFavoriteAnimeIds(
-      req.user!.userId,
+      req.user.userId,
     );
 
     return {
@@ -110,16 +123,19 @@ export class UsersController {
 
   @UseGuards(AuthGuard('jwt'))
   @Put('me/change-password')
-  @ApiOperation({ summary: 'Change current user password' })
+  @ApiOperation({ summary: 'Cambiar la contraseña del usuario actual' })
   @ApiOkResponse({
     type: ChangePasswordResponseDto,
-    description: 'Returns confirmation message when password was updated',
+    description:
+      'Retorna un mensaje de confirmación cuando la contraseña ha sido actualizada.',
   })
   @ApiBadRequestResponse({
     description:
-      'Validation failed, current password is wrong, or new password is invalid',
+      'La validación de los datos falló, la contraseña actual es incorrecta o la nueva contraseña es inválida.',
   })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
+  @ApiUnauthorizedResponse({
+    description: 'El token Bearer es inexistente o inválido.',
+  })
   async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
     try {
       return await this.users.changePassword(

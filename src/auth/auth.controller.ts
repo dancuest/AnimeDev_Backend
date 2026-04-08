@@ -23,18 +23,19 @@ import {
   ForgotPasswordResponseDto,
 } from './dto/auth-swagger.dto';
 
-@ApiTags('auth')
+@ApiTags('autenticación')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('device')
-  @ApiOperation({ summary: 'Create or resume a device session' })
+  @ApiOperation({ summary: 'Crear o reanudar una sesión por dispositivo' })
   @ApiCreatedResponse({
     type: AuthSessionResponseDto,
-    description: 'Returns a JWT and profile information for the device user',
+    description:
+      'Retorna un JWT y la información del perfil del usuario del dispositivo.',
   })
-  @ApiBadRequestResponse({ description: 'Validation failed' })
+  @ApiBadRequestResponse({ description: 'La validación de los datos falló.' })
   loginDevice(@Body() dto: DeviceLoginDto) {
     return this.auth.loginWithDevice(dto.deviceId);
   }
@@ -44,17 +45,18 @@ export class AuthController {
   @Post('register')
   @ApiOperation({
     summary:
-      'Register email/password credentials for the currently authenticated device user',
+      'Registrar credenciales de correo y contraseña para el usuario de dispositivo autenticado actualmente',
   })
   @ApiCreatedResponse({
     type: AuthSessionResponseDto,
-    description: 'Returns a JWT and profile information for the registered user',
+    description:
+      'Retorna un JWT y la información del perfil del usuario registrado.',
   })
   @ApiBadRequestResponse({
-    description: 'Validation failed or email already exists',
+    description: 'La validación de los datos falló o el correo ya existe.',
   })
   @ApiUnauthorizedResponse({
-    description: 'Missing or invalid bearer token',
+    description: 'El token Bearer es inexistente o inválido.',
   })
   register(
     @Req() req: Request & { user?: { userId: string } },
@@ -64,39 +66,44 @@ export class AuthController {
   }
 
   @Post('login')
-  @ApiOperation({ summary: 'Login with email and password' })
+  @ApiOperation({ summary: 'Iniciar sesión con correo y contraseña' })
   @ApiCreatedResponse({
     type: AuthSessionResponseDto,
-    description: 'Returns a JWT and profile information',
+    description: 'Retorna un JWT y la información del perfil.',
   })
   @ApiBadRequestResponse({
-    description: 'Validation failed or credentials are invalid',
+    description:
+      'La validación de los datos falló o las credenciales son inválidas.',
   })
   login(@Body() dto: LoginDto) {
     return this.auth.loginWithEmail(dto.email, dto.password);
   }
 
   @Post('forgot-password')
-  @ApiOperation({ summary: 'Generate password reset token in demo mode' })
+  @ApiOperation({
+    summary: 'Generar token de restablecimiento de contraseña en modo demostración',
+  })
   @ApiCreatedResponse({
     type: ForgotPasswordResponseDto,
-    description: 'Returns token metadata for password recovery',
+    description: 'Retorna los metadatos del token para la recuperación de contraseña.',
   })
   @ApiBadRequestResponse({
-    description: 'Validation failed or user has no email password flow configured',
+    description:
+      'La validación de los datos falló o el usuario no tiene configurado el flujo de contraseña por correo.',
   })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.auth.forgotPassword(dto.email);
   }
 
   @Post('reset-password')
-  @ApiOperation({ summary: 'Reset password using a valid token' })
+  @ApiOperation({ summary: 'Restablecer contraseña usando un token válido' })
   @ApiCreatedResponse({
     type: BasicMessageResponseDto,
-    description: 'Indicates whether the password was reset successfully',
+    description: 'Indica si la contraseña fue restablecida correctamente.',
   })
   @ApiBadRequestResponse({
-    description: 'Validation failed or token/email combination is invalid',
+    description:
+      'La validación de los datos falló o la combinación de token y correo es inválida.',
   })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.auth.resetPassword(dto.email, dto.token, dto.newPassword);
@@ -105,13 +112,13 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @Post('logout')
-  @ApiOperation({ summary: 'Logout current session' })
+  @ApiOperation({ summary: 'Cerrar la sesión actual' })
   @ApiCreatedResponse({
     type: BasicMessageResponseDto,
-    description: 'Returns logout confirmation message',
+    description: 'Retorna el mensaje de confirmación de cierre de sesión.',
   })
   @ApiUnauthorizedResponse({
-    description: 'Missing or invalid bearer token',
+    description: 'El token Bearer es inexistente o inválido.',
   })
   logout() {
     return this.auth.logout();
@@ -120,13 +127,13 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @Get('me')
-  @ApiOperation({ summary: 'Get current authenticated profile' })
+  @ApiOperation({ summary: 'Obtener el perfil del usuario autenticado' })
   @ApiOkResponse({
     type: AuthMeResponseDto,
-    description: 'Returns current authenticated profile data',
+    description: 'Retorna los datos del perfil del usuario autenticado.',
   })
   @ApiUnauthorizedResponse({
-    description: 'Missing or invalid bearer token',
+    description: 'El token Bearer es inexistente o inválido.',
   })
   me(@Req() req: Request & { user?: { userId: string } }) {
     return this.auth.me(req.user!.userId);

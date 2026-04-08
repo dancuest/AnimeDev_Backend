@@ -28,7 +28,7 @@ import {
   InteractionRecordResponseDto,
 } from './dto/interactions-swagger.dto';
 
-@ApiTags('interactions')
+@ApiTags('interacciones')
 @ApiBearerAuth('access-token')
 @Controller('interactions')
 @UseGuards(JwtAuthGuard)
@@ -36,15 +36,18 @@ export class InteractionsController {
   constructor(private readonly interactionsService: InteractionsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create a user interaction for an anime' })
+  @ApiOperation({ summary: 'Registrar una interacción del usuario con un anime' })
   @ApiCreatedResponse({
     type: InteractionCreateResponseDto,
-    description: 'Returns confirmation plus the stored interaction',
+    description: 'Retorna la confirmación junto con la interacción almacenada.',
   })
   @ApiBadRequestResponse({
-    description: 'Validation failed or payload does not match interaction type',
+    description:
+      'La validación de los datos falló o la carga útil no coincide con el tipo de interacción.',
   })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
+  @ApiUnauthorizedResponse({
+    description: 'El token Bearer es inexistente o inválido.',
+  })
   create(
     @Req() req: Request & { user?: { userId: string } },
     @Body() dto: CreateInteractionDto,
@@ -53,19 +56,22 @@ export class InteractionsController {
   }
 
   @Get('me')
-  @ApiOperation({ summary: 'List current user interactions' })
+  @ApiOperation({ summary: 'Listar las interacciones del usuario actual' })
   @ApiQuery({
     name: 'limit',
     required: false,
     example: 50,
-    description: 'Maximum number of interactions to return',
+    description: 'Cantidad máxima de interacciones a retornar',
   })
   @ApiOkResponse({
     type: InteractionRecordResponseDto,
     isArray: true,
-    description: 'Returns current user interactions ordered by recency',
+    description:
+      'Retorna las interacciones del usuario actual ordenadas por recencia.',
   })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
+  @ApiUnauthorizedResponse({
+    description: 'El token Bearer es inexistente o inválido.',
+  })
   listMine(
     @Req() req: Request & { user?: { userId: string } },
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,

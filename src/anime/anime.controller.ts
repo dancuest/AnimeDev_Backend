@@ -21,10 +21,11 @@ export class AnimeController {
   constructor(private readonly animeService: AnimeService) {}
 
   @Get('top')
-  @ApiOperation({ summary: 'Get top anime list' })
+  @ApiOperation({ summary: 'Obtener la lista de animes destacados' })
   @ApiOkResponse({
     type: AnimeListResponseDto,
-    description: 'Returns top anime with meta wrapper',
+    description:
+      'Retorna la lista de animes destacados con su metainformación.',
   })
   getTop(@Query() query: AnimeTopQueryDto, @Req() req: Request) {
     return this.animeService.getTop(
@@ -35,10 +36,11 @@ export class AnimeController {
   }
 
   @Get('search')
-  @ApiOperation({ summary: 'Search anime by text query' })
+  @ApiOperation({ summary: 'Buscar anime por texto' })
   @ApiOkResponse({
     type: AnimeSearchResponseDto,
-    description: 'Returns anime search results with pagination metadata',
+    description:
+      'Retorna los resultados de búsqueda de anime con metadatos de paginación.',
   })
   search(@Query() query: AnimeSearchQueryDto, @Req() req: Request) {
     return this.animeService.search(
@@ -50,25 +52,30 @@ export class AnimeController {
   }
 
   @Get('hero')
-  @ApiOperation({ summary: 'Get hero anime for home screen' })
+  @ApiOperation({
+    summary: 'Obtener el anime principal de la pantalla de inicio',
+  })
   @ApiOkResponse({
     type: AnimeSingleResponseDto,
-    description: 'Returns a single hero anime',
+    description: 'Retorna un único anime principal.',
   })
   getHero(@Req() req: Request) {
     return this.animeService.getHero(req.requestId);
   }
 
   @Get('by-genre/:genreId')
-  @ApiOperation({ summary: 'Get anime list filtered by genre id' })
+  @ApiOperation({
+    summary: 'Obtener la lista de animes filtrada por identificador de género',
+  })
   @ApiParam({
     name: 'genreId',
     example: 1,
-    description: 'Anime genre id',
+    description: 'Identificador del género del anime',
   })
   @ApiOkResponse({
     type: AnimeListResponseDto,
-    description: 'Returns anime list filtered by genre with limit metadata',
+    description:
+      'Retorna la lista de animes filtrada por género con metadatos del límite.',
   })
   getByGenre(
     @Param('genreId', ParseIntPipe) genreId: number,
@@ -85,31 +92,31 @@ export class AnimeController {
 
   @Get(':id/detail')
   @ApiOperation({
-    summary: 'Get anime detail with cultural notes and trailers',
+    summary: 'Obtener el detalle del anime con fichas culturales y tráilers',
   })
   @ApiParam({
     name: 'id',
     example: 5114,
-    description: 'Anime id',
+    description: 'Identificador del anime',
   })
   @ApiOkResponse({
     type: AnimeDetailResponseDto,
-    description: 'Returns anime detail payload',
+    description: 'Retorna la información detallada del anime.',
   })
   getDetail(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
     return this.animeService.getDetail(id, req.requestId);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get anime by id' })
+  @ApiOperation({ summary: 'Obtener anime por identificador' })
   @ApiParam({
     name: 'id',
     example: 5114,
-    description: 'Anime id',
+    description: 'Identificador del anime',
   })
   @ApiOkResponse({
     type: AnimeSingleResponseDto,
-    description: 'Returns a single anime',
+    description: 'Retorna un único anime.',
   })
   getById(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
     return this.animeService.getById(id, req.requestId);

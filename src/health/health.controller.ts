@@ -6,10 +6,10 @@ import { HealthResponseDto } from './dto/health-response.dto';
 @Controller('health')
 export class HealthController {
   @Get()
-  @ApiOperation({ summary: 'Health check endpoint' })
+  @ApiOperation({ summary: 'Endpoint de verificación del estado del servicio' })
   @ApiOkResponse({
     type: HealthResponseDto,
-    description: 'Returns backend health status',
+    description: 'Retorna el estado del backend.',
   })
   getHealth() {
     return {

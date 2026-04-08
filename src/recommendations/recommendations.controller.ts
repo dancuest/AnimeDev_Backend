@@ -18,7 +18,7 @@ import { RecommendationsService } from './recommendations.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RecommendationsResponseDto } from './dto/recommendations-swagger.dto';
 
-@ApiTags('recommendations')
+@ApiTags('recomendaciones')
 @ApiBearerAuth('access-token')
 @Controller('recommendations')
 export class RecommendationsController {
@@ -30,13 +30,16 @@ export class RecommendationsController {
   @Get('adaptive')
   @ApiOperation({
     summary:
-      'Get adaptive recommendations using cosine similarity and preference signals',
+      'Obtener recomendaciones adaptativas usando similitud del coseno y señales de preferencia',
   })
   @ApiOkResponse({
     type: RecommendationsResponseDto,
-    description: 'Returns personalized anime recommendations plus meta strategy',
+    description:
+      'Retorna recomendaciones personalizadas de anime junto con la estrategia utilizada.',
   })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token' })
+  @ApiUnauthorizedResponse({
+    description: 'El token Bearer es inexistente o inválido.',
+  })
   async getAdaptiveRecommendations(
     @Req() req: Request & { user?: { userId: string } },
   ) {
@@ -44,7 +47,7 @@ export class RecommendationsController {
 
     if (!userId) {
       throw new HttpException(
-        'User not found in request',
+        'Usuario no encontrado en la solicitud',
         HttpStatus.UNAUTHORIZED,
       );
     }
