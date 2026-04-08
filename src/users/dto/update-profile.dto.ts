@@ -21,6 +21,17 @@ export class UpdateProfileDto {
   displayName?: string;
 
   @ApiPropertyOptional({
+    example: 'Antigravity',
+    minLength: 2,
+    description: 'Optional nickname shown in the profile',
+  })
+  @IsOptional()
+  @Transform(normalizeOptionalString)
+  @IsString()
+  @MinLength(2)
+  nickname?: string;
+
+  @ApiPropertyOptional({
     example: 'usuario@correo.com',
     description: 'User email address',
   })

@@ -50,12 +50,10 @@ export class RecommendationsController {
     }
 
     const requestId = (req as any).requestId;
-    const recommendations =
-      await this.recommendationsService.getAdaptiveRecommendations(
-        userId,
-        requestId,
-      );
 
-    return recommendations;
+    return this.recommendationsService.getAdaptiveRecommendations(
+      userId,
+      requestId,
+    );
   }
 }
