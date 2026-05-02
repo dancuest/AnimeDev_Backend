@@ -36,20 +36,21 @@ export class AnimeService {
     private readonly mapper: AnimeMapper,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
-    
     this.baseUrl =
-    this.configService.get<string>('jikanBaseUrl') ?? 'https://api.jikan.moe/v4';
+      this.configService.get<string>('jikanBaseUrl') ??
+      'https://api.jikan.moe/v4';
 
-  this.cacheTtlMs = this.configService.get<number>('cacheTtlMs') ?? 600_000;
-  this.shortCacheTtlMs =
-    this.configService.get<number>('shortCacheTtlMs') ?? 60_000;
+    this.cacheTtlMs = this.configService.get<number>('cacheTtlMs') ?? 600_000;
 
-  this.translateSynopses =
-    this.configService.get<boolean>('translateSynopses') ?? true;
+    this.shortCacheTtlMs =
+      this.configService.get<number>('shortCacheTtlMs') ?? 60_000;
 
-  this.translationBaseUrl =
-    this.configService.get<string>('translationBaseUrl') ??
-    'https://api.mymemory.translated.net/get';
+    this.translateSynopses =
+      this.configService.get<boolean>('translateSynopses') ?? true;
+
+    this.translationBaseUrl =
+      this.configService.get<string>('translationBaseUrl') ??
+      'https://api.mymemory.translated.net/get';
   }
 
   /**
@@ -119,7 +120,11 @@ export class AnimeService {
     const cacheKey = `anime:${id}`;
 
     const anime = await this.getCached(cacheKey, async () => {
-      const response = await this.fetchDetail<JikanAnime>(`/anime/${id}`, requestId);
+      const response = await this.fetchDetail<JikanAnime>(
+        `/anime/${id}`,
+        requestId,
+      );
+
       return this.mapper.toAnimeDto(response.data);
     });
 
@@ -128,11 +133,18 @@ export class AnimeService {
     };
   }
 
-  async getDetail(id: number, requestId?: string): Promise<{ data: AnimeDetailDto }> {
-    const cacheKey = `anime:detail:${id}:es`;
+  async getDetail(
+    id: number,
+    requestId?: string,
+  ): Promise<{ data: AnimeDetailDto }> {
+    const cacheKey = `anime:detail:${id}:full:es`;
 
     const detail = await this.getCached(cacheKey, async () => {
-      const response = await this.fetchDetail<JikanAnime>(`/anime/${id}/full`, requestId);
+      const response = await this.fetchDetail<JikanAnime>(
+        `/anime/${id}/full`,
+        requestId,
+      );
+
       const anime = this.mapper.toAnimeDto(response.data);
 
       const animeWithSpanishSynopsis: AnimeDto = {
@@ -142,8 +154,13 @@ export class AnimeService {
 
       return {
         anime: animeWithSpanishSynopsis,
-        culturalNotes: this.buildCulturalNotes(animeWithSpanishSynopsis, response.data),
+        culturalNotes: this.buildCulturalNotes(
+          animeWithSpanishSynopsis,
+          response.data,
+        ),
 
+        // Ya no se generan búsquedas falsas de YouTube.
+        // El trailer oficial queda disponible en anime.trailerUrl.
         trailers: [],
       };
     });
@@ -152,43 +169,45 @@ export class AnimeService {
   }
 
   async getHero(requestId?: string): Promise<{ data: AnimeDto }> {
-  const cacheKey = 'anime:hero:es';
+    const cacheKey = 'anime:hero:es';
 
-  const anime = await this.getCached(
-    cacheKey,
-    async () => {
-      const response = await this.fetchList<JikanAnime>(
-        '/top/anime',
-        this.withSfw({ limit: 10 }, false),
-        requestId,
-      );
-
-      const items = response.data.map((item) => this.mapper.toAnimeDto(item));
-
-      if (items.length === 0) {
-        throw new HttpException(
-          {
-            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-            message: 'No hero anime available from upstream provider',
-            upstream: 'jikan',
-            requestId: requestId ?? null,
-          },
-          HttpStatus.SERVICE_UNAVAILABLE,
+    const anime = await this.getCached(
+      cacheKey,
+      async () => {
+        const response = await this.fetchList<JikanAnime>(
+          '/top/anime',
+          this.withSfw({ limit: 10 }, false),
+          requestId,
         );
-      }
 
-      const selectedAnime = items[Math.floor(Math.random() * items.length)];
+        const items = response.data.map((item) => this.mapper.toAnimeDto(item));
 
-      return {
-        ...selectedAnime,
-        synopsis: await this.translateSynopsisToSpanish(selectedAnime.synopsis),
-      };
-    },
-    this.shortCacheTtlMs,
-  );
+        if (items.length === 0) {
+          throw new HttpException(
+            {
+              statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+              message: 'No hero anime available from upstream provider',
+              upstream: 'jikan',
+              requestId: requestId ?? null,
+            },
+            HttpStatus.SERVICE_UNAVAILABLE,
+          );
+        }
 
-  return { data: anime };
-}
+        const selectedAnime = items[Math.floor(Math.random() * items.length)];
+
+        return {
+          ...selectedAnime,
+          synopsis: await this.translateSynopsisToSpanish(
+            selectedAnime.synopsis,
+          ),
+        };
+      },
+      this.shortCacheTtlMs,
+    );
+
+    return { data: anime };
+  }
 
   async getByGenre(
     genreId: string,
@@ -196,7 +215,9 @@ export class AnimeService {
     requestId?: string,
     includeAdult?: boolean,
   ): Promise<{ data: AnimeDto[]; meta: { limit: number } }> {
-    const cacheKey = `anime:genre:${genreId}:${limit}:${includeAdult === true ? 'all' : 'sfw'}`;
+    const cacheKey = `anime:genre:${genreId}:${limit}:${
+      includeAdult === true ? 'all' : 'sfw'
+    }`;
 
     const data = await this.getCached(
       cacheKey,
@@ -218,19 +239,23 @@ export class AnimeService {
     };
   }
 
-  async getGenres(includeAdult = true, requestId?: string): Promise<{ data: GenreDto[] }> {
+  async getGenres(
+    includeAdult = true,
+    requestId?: string,
+  ): Promise<{ data: GenreDto[] }> {
     const cacheKey = `anime:genres:${includeAdult ? 'all' : 'safe'}`;
 
     const genres = await this.getCached(
       cacheKey,
       async () => {
-        const response = await this.fetchList<{ mal_id: number; name: string }>(
-          '/genres/anime',
-          {},
-          requestId,
-        );
+        const response = await this.fetchList<{
+          mal_id: number;
+          name: string;
+        }>('/genres/anime', {}, requestId);
 
-        const mappedGenres = response.data.map((genre) => this.mapper.toGenreDto(genre));
+        const mappedGenres = response.data.map((genre) =>
+          this.mapper.toGenreDto(genre),
+        );
 
         if (includeAdult) {
           return mappedGenres;
@@ -255,9 +280,12 @@ export class AnimeService {
   ): Promise<JikanListResponse<T>> {
     try {
       const response = await lastValueFrom(
-        this.httpService.get<JikanListResponse<T>>(`${this.baseUrl}${endpoint}`, {
-          params,
-        }),
+        this.httpService.get<JikanListResponse<T>>(
+          `${this.baseUrl}${endpoint}`,
+          {
+            params,
+          },
+        ),
       );
 
       return response.data;
@@ -272,7 +300,9 @@ export class AnimeService {
   ): Promise<JikanDetailResponse<T>> {
     try {
       const response = await lastValueFrom(
-        this.httpService.get<JikanDetailResponse<T>>(`${this.baseUrl}${endpoint}`),
+        this.httpService.get<JikanDetailResponse<T>>(
+          `${this.baseUrl}${endpoint}`,
+        ),
       );
 
       return response.data;
@@ -293,7 +323,9 @@ export class AnimeService {
     }
 
     const fresh = await fetcher();
+
     await this.cacheManager.set(key, fresh, ttlMs);
+
     return fresh;
   }
 
@@ -305,13 +337,17 @@ export class AnimeService {
     const axiosError = error as {
       response?: {
         status?: number;
-        data?: { message?: string; error?: string };
+        data?: {
+          message?: string;
+          error?: string;
+        };
       };
       message?: string;
       code?: string;
     };
 
     const upstreamStatus = axiosError.response?.status;
+
     const statusCode =
       upstreamStatus && upstreamStatus >= 500
         ? HttpStatus.SERVICE_UNAVAILABLE
@@ -350,6 +386,7 @@ export class AnimeService {
         .slice(0, 2)
         .map((studio) => studio.name)
         .join(', ');
+
       notes.push(`Producción a cargo de ${studioNames}.`);
     }
 
@@ -358,6 +395,7 @@ export class AnimeService {
         .slice(0, 3)
         .map((genre) => genre.name)
         .join(', ');
+
       notes.push(`Combina elementos de ${genreNames}.`);
     }
 
@@ -366,88 +404,89 @@ export class AnimeService {
 
     return notes.slice(0, 4);
   }
+
   private async translateSynopsisToSpanish(synopsis: string): Promise<string> {
-  const cleanSynopsis = synopsis.trim();
+    const cleanSynopsis = synopsis.trim();
 
-  if (!cleanSynopsis) {
-    return 'Sinopsis no disponible.';
-  }
-
-  if (!this.translateSynopses) {
-    return cleanSynopsis;
-  }
-
-  try {
-    const chunks = this.splitTextIntoChunks(cleanSynopsis, 450);
-    const translatedChunks: string[] = [];
-
-    for (const chunk of chunks) {
-      translatedChunks.push(await this.translateChunkToSpanish(chunk));
+    if (!cleanSynopsis) {
+      return 'Sinopsis no disponible.';
     }
 
-    const translated = translatedChunks.join(' ').trim();
+    if (!this.translateSynopses) {
+      return cleanSynopsis;
+    }
 
-    return translated || cleanSynopsis;
-  } catch {
-    return cleanSynopsis;
-  }
-}
+    try {
+      const chunks = this.splitTextIntoChunks(cleanSynopsis, 450);
+      const translatedChunks: string[] = [];
 
-private async translateChunkToSpanish(text: string): Promise<string> {
-  const response = await lastValueFrom(
-    this.httpService.get<TranslationResponse>(this.translationBaseUrl, {
-      params: {
-        q: text,
-        langpair: 'en|es',
-      },
-      timeout: 8000,
-    }),
-  );
+      for (const chunk of chunks) {
+        translatedChunks.push(await this.translateChunkToSpanish(chunk));
+      }
 
-  const translatedText = response.data?.responseData?.translatedText?.trim();
+      const translated = translatedChunks.join(' ').trim();
 
-  if (!translatedText) {
-    return text;
+      return translated || cleanSynopsis;
+    } catch {
+      return cleanSynopsis;
+    }
   }
 
-  return this.decodeHtmlEntities(translatedText);
-}
+  private async translateChunkToSpanish(text: string): Promise<string> {
+    const response = await lastValueFrom(
+      this.httpService.get<TranslationResponse>(this.translationBaseUrl, {
+        params: {
+          q: text,
+          langpair: 'en|es',
+        },
+        timeout: 8000,
+      }),
+    );
 
-private splitTextIntoChunks(text: string, maxLength: number): string[] {
-  const sentences = text
-    .replace(/\s+/g, ' ')
-    .split(/(?<=[.!?])\s+/)
-    .filter(Boolean);
+    const translatedText = response.data?.responseData?.translatedText?.trim();
 
-  const chunks: string[] = [];
-  let currentChunk = '';
+    if (!translatedText) {
+      return text;
+    }
 
-  for (const sentence of sentences) {
-    if ((currentChunk + ' ' + sentence).trim().length <= maxLength) {
-      currentChunk = (currentChunk + ' ' + sentence).trim();
-      continue;
+    return this.decodeHtmlEntities(translatedText);
+  }
+
+  private splitTextIntoChunks(text: string, maxLength: number): string[] {
+    const sentences = text
+      .replace(/\s+/g, ' ')
+      .split(/(?<=[.!?])\s+/)
+      .filter(Boolean);
+
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    for (const sentence of sentences) {
+      if ((currentChunk + ' ' + sentence).trim().length <= maxLength) {
+        currentChunk = (currentChunk + ' ' + sentence).trim();
+        continue;
+      }
+
+      if (currentChunk) {
+        chunks.push(currentChunk);
+      }
+
+      currentChunk = sentence;
     }
 
     if (currentChunk) {
       chunks.push(currentChunk);
     }
 
-    currentChunk = sentence;
+    return chunks.length > 0 ? chunks : [text.slice(0, maxLength)];
   }
 
-  if (currentChunk) {
-    chunks.push(currentChunk);
+  private decodeHtmlEntities(text: string): string {
+    return text
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
   }
-
-  return chunks.length > 0 ? chunks : [text.slice(0, maxLength)];
-}
-
-private decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
-}
 }

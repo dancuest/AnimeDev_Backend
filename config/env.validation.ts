@@ -1,5 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import {
+  IsBooleanString,
   IsInt,
   IsOptional,
   IsString,
@@ -30,7 +31,15 @@ class EnvironmentVariables {
   @Min(30)
   SHORT_CACHE_TTL_SECONDS?: number;
 
-  
+  @IsOptional()
+  @IsBooleanString()
+  TRANSLATE_SYNOPSES?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsUrl()
+  TRANSLATION_BASE_URL?: string;
+
   @IsOptional()
   @IsString()
   @MinLength(32)

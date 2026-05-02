@@ -6,6 +6,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Request } from 'express';
+
 import { AnimeService } from './anime.service';
 import { AnimeSearchQueryDto, AnimeTopQueryDto } from './dto/anime-query.dto';
 import {
@@ -21,7 +22,9 @@ export class AnimeController {
   constructor(private readonly animeService: AnimeService) {}
 
   @Get('top')
-  @ApiOperation({ summary: 'Obtener la lista de animes destacados' })
+  @ApiOperation({
+    summary: 'Obtener la lista de animes destacados',
+  })
   @ApiOkResponse({
     type: AnimeListResponseDto,
     description:
@@ -36,7 +39,9 @@ export class AnimeController {
   }
 
   @Get('search')
-  @ApiOperation({ summary: 'Buscar anime por texto' })
+  @ApiOperation({
+    summary: 'Buscar anime por texto',
+  })
   @ApiOkResponse({
     type: AnimeSearchResponseDto,
     description:
@@ -92,7 +97,8 @@ export class AnimeController {
 
   @Get(':id/detail')
   @ApiOperation({
-    summary: 'Obtener el detalle del anime con fichas culturales y tráilers',
+    summary:
+      'Obtener el detalle del anime con fichas culturales y recursos complementarios',
   })
   @ApiParam({
     name: 'id',
@@ -101,14 +107,17 @@ export class AnimeController {
   })
   @ApiOkResponse({
     type: AnimeDetailResponseDto,
-    description: 'Retorna la información detallada del anime.',
+    description:
+      'Retorna la información detallada del anime, incluyendo sinopsis, notas culturales y recursos externos disponibles.',
   })
   getDetail(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
     return this.animeService.getDetail(id, req.requestId);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Obtener anime por identificador' })
+  @ApiOperation({
+    summary: 'Obtener anime por identificador',
+  })
   @ApiParam({
     name: 'id',
     example: 5114,
