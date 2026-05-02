@@ -22,7 +22,17 @@ export interface AnimeDto {
   originalTitle: string | null;
   synopsis: string;
   coverImageUrl: string;
+
+  /**
+   * Se conserva por compatibilidad con el frontend anterior.
+   * En adelante apunta al manga relacionado cuando exista.
+   */
   mangaPlusUrl: string;
+
+  mangaUrl: string | null;
+  mangaTitle: string | null;
+  trailerUrl: string | null;
+
   totalEpisodes: number | null;
   durationType: DurationType;
   emissionStatus: EmissionStatus;

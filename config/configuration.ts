@@ -3,4 +3,9 @@ export default () => ({
   jikanBaseUrl: process.env.JIKAN_BASE_URL ?? 'https://api.jikan.moe/v4',
   cacheTtlMs: parseInt(process.env.CACHE_TTL_SECONDS ?? '600', 10) * 1000,
   shortCacheTtlMs: parseInt(process.env.SHORT_CACHE_TTL_SECONDS ?? '60', 10) * 1000,
+
+  translateSynopses: process.env.TRANSLATE_SYNOPSES !== 'false',
+  translationBaseUrl:
+    process.env.TRANSLATION_BASE_URL ??
+    'https://api.mymemory.translated.net/get',
 });

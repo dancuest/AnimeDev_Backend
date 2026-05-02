@@ -26,7 +26,10 @@ export class AnimeResponseDto {
   originalTitle!: string | null;
 
   @ApiProperty({
-    example: 'Two brothers search for a Philosopher’s Stone after an alchemy experiment goes wrong.',
+    example:
+      'Dos hermanos buscan la Piedra Filosofal después de un experimento de alquimia fallido.',
+    description:
+      'Sinopsis del anime. Cuando la traducción automática está habilitada, se intenta entregar en español; si falla, se conserva la sinopsis original.',
   })
   synopsis!: string;
 
@@ -36,9 +39,35 @@ export class AnimeResponseDto {
   coverImageUrl!: string;
 
   @ApiProperty({
-    example: 'https://mangaplus.shueisha.co.jp/',
+    example: '',
+    deprecated: true,
+    description:
+      'Campo heredado conservado por compatibilidad. Ya no se usa como recurso principal de manga.',
   })
   mangaPlusUrl!: string;
+
+  @ApiPropertyOptional({
+    example: 'https://myanimelist.net/manga/25/Fullmetal_Alchemist',
+    nullable: true,
+    description:
+      'Enlace al manga relacionado cuando la fuente externa lo proporciona.',
+  })
+  mangaUrl!: string | null;
+
+  @ApiPropertyOptional({
+    example: 'Fullmetal Alchemist',
+    nullable: true,
+    description: 'Nombre del manga relacionado.',
+  })
+  mangaTitle!: string | null;
+
+  @ApiPropertyOptional({
+    example: 'https://www.youtube.com/watch?v=--IcmZkvL0Q',
+    nullable: true,
+    description:
+      'URL del trailer oficial cuando está disponible en la fuente externa.',
+  })
+  trailerUrl!: string | null;
 
   @ApiPropertyOptional({
     example: 64,
@@ -97,12 +126,17 @@ export class AnimeDetailDataResponseDto {
 
   @ApiProperty({
     type: [String],
-    example: ['Obra influyente del shonen moderno'],
+    example: ['Obra influyente dentro del shonen moderno.'],
+    description:
+      'Notas culturales o contextuales asociadas al anime consultado.',
   })
   culturalNotes!: string[];
 
   @ApiProperty({
     type: [TrailerResponseDto],
+    deprecated: true,
+    description:
+      'Campo heredado. Se conserva vacío para compatibilidad con versiones anteriores del frontend. El trailer oficial se consulta mediante anime.trailerUrl.',
   })
   trailers!: TrailerResponseDto[];
 }

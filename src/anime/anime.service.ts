@@ -6,7 +6,7 @@ import { Cache } from 'cache-manager';
 import { lastValueFrom } from 'rxjs';
 
 import { AnimeMapper } from './anime.mapper';
-import { AnimeDetailDto, TrailerDto } from './dto/anime-detail.dto';
+import { AnimeDetailDto } from './dto/anime-detail.dto';
 import { AnimeDto, GenreDto } from './dto/anime.dto';
 import {
   JikanAnime,
@@ -14,11 +14,19 @@ import {
   JikanListResponse,
 } from './types/jikan.types';
 
+interface TranslationResponse {
+  responseData?: {
+    translatedText?: string;
+  };
+}
+
 @Injectable()
 export class AnimeService {
   private readonly baseUrl: string;
   private readonly cacheTtlMs: number;
   private readonly shortCacheTtlMs: number;
+  private readonly translateSynopses: boolean;
+  private readonly translationBaseUrl: string;
 
   private static readonly ADULT_GENRE_IDS = new Set(['9', '12', '49']);
 
@@ -28,9 +36,20 @@ export class AnimeService {
     private readonly mapper: AnimeMapper,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
-    this.baseUrl = this.configService.get('jikanBaseUrl') ?? 'https://api.jikan.moe/v4';
-    this.cacheTtlMs = this.configService.get('cacheTtlMs') ?? 600_000;
-    this.shortCacheTtlMs = this.configService.get('shortCacheTtlMs') ?? 60_000;
+    
+    this.baseUrl =
+    this.configService.get<string>('jikanBaseUrl') ?? 'https://api.jikan.moe/v4';
+
+  this.cacheTtlMs = this.configService.get<number>('cacheTtlMs') ?? 600_000;
+  this.shortCacheTtlMs =
+    this.configService.get<number>('shortCacheTtlMs') ?? 60_000;
+
+  this.translateSynopses =
+    this.configService.get<boolean>('translateSynopses') ?? true;
+
+  this.translationBaseUrl =
+    this.configService.get<string>('translationBaseUrl') ??
+    'https://api.mymemory.translated.net/get';
   }
 
   /**
@@ -110,57 +129,66 @@ export class AnimeService {
   }
 
   async getDetail(id: number, requestId?: string): Promise<{ data: AnimeDetailDto }> {
-    const cacheKey = `anime:detail:${id}`;
+    const cacheKey = `anime:detail:${id}:es`;
 
     const detail = await this.getCached(cacheKey, async () => {
-      const response = await this.fetchDetail<JikanAnime>(`/anime/${id}`, requestId);
+      const response = await this.fetchDetail<JikanAnime>(`/anime/${id}/full`, requestId);
       const anime = this.mapper.toAnimeDto(response.data);
 
+      const animeWithSpanishSynopsis: AnimeDto = {
+        ...anime,
+        synopsis: await this.translateSynopsisToSpanish(anime.synopsis),
+      };
+
       return {
-        anime,
-        culturalNotes: this.buildCulturalNotes(anime, response.data),
-        trailers: this.buildTrailers(anime),
+        anime: animeWithSpanishSynopsis,
+        culturalNotes: this.buildCulturalNotes(animeWithSpanishSynopsis, response.data),
+
+        trailers: [],
       };
     });
 
-    return {
-      data: detail,
-    };
+    return { data: detail };
   }
 
   async getHero(requestId?: string): Promise<{ data: AnimeDto }> {
-    const cacheKey = 'anime:hero';
+  const cacheKey = 'anime:hero:es';
 
-    const anime = await this.getCached(
-      cacheKey,
-      async () => {
-        const response = await this.fetchList<JikanAnime>(
-          '/top/anime',
-          this.withSfw({ limit: 10 }, false),
-          requestId,
+  const anime = await this.getCached(
+    cacheKey,
+    async () => {
+      const response = await this.fetchList<JikanAnime>(
+        '/top/anime',
+        this.withSfw({ limit: 10 }, false),
+        requestId,
+      );
+
+      const items = response.data.map((item) => this.mapper.toAnimeDto(item));
+
+      if (items.length === 0) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+            message: 'No hero anime available from upstream provider',
+            upstream: 'jikan',
+            requestId: requestId ?? null,
+          },
+          HttpStatus.SERVICE_UNAVAILABLE,
         );
+      }
 
-        const items = response.data.map((item) => this.mapper.toAnimeDto(item));
+      const selectedAnime = items[Math.floor(Math.random() * items.length)];
 
-        if (items.length === 0) {
-          throw new HttpException(
-            {
-              statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-              message: 'No hero anime available from upstream provider',
-              upstream: 'jikan',
-              requestId: requestId ?? null,
-            },
-            HttpStatus.SERVICE_UNAVAILABLE,
-          );
-        }
+      return {
+        ...selectedAnime,
+        synopsis: await this.translateSynopsisToSpanish(selectedAnime.synopsis),
+      };
+    },
+    this.shortCacheTtlMs,
+  );
 
-        return items[Math.floor(Math.random() * items.length)];
-      },
-      this.shortCacheTtlMs,
-    );
-
-    return { data: anime };
-  }
+  return { data: anime };
+}
 
   async getByGenre(
     genreId: string,
@@ -338,17 +366,88 @@ export class AnimeService {
 
     return notes.slice(0, 4);
   }
+  private async translateSynopsisToSpanish(synopsis: string): Promise<string> {
+  const cleanSynopsis = synopsis.trim();
 
-  private buildTrailers(anime: AnimeDto): TrailerDto[] {
-    const base = anime.title.trim() || 'anime trailer';
-    const variants = [`${base} trailer`, `${base} PV`, `${base} opening`, `${base} teaser`];
-
-    return variants.slice(0, 4).map((query, index) => ({
-      number: index + 1,
-      title: query,
-      durationMinutes: 2 + index,
-      description: `Búsqueda sugerida para ${anime.title}.`,
-      youtubeUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
-    }));
+  if (!cleanSynopsis) {
+    return 'Sinopsis no disponible.';
   }
+
+  if (!this.translateSynopses) {
+    return cleanSynopsis;
+  }
+
+  try {
+    const chunks = this.splitTextIntoChunks(cleanSynopsis, 450);
+    const translatedChunks: string[] = [];
+
+    for (const chunk of chunks) {
+      translatedChunks.push(await this.translateChunkToSpanish(chunk));
+    }
+
+    const translated = translatedChunks.join(' ').trim();
+
+    return translated || cleanSynopsis;
+  } catch {
+    return cleanSynopsis;
+  }
+}
+
+private async translateChunkToSpanish(text: string): Promise<string> {
+  const response = await lastValueFrom(
+    this.httpService.get<TranslationResponse>(this.translationBaseUrl, {
+      params: {
+        q: text,
+        langpair: 'en|es',
+      },
+      timeout: 8000,
+    }),
+  );
+
+  const translatedText = response.data?.responseData?.translatedText?.trim();
+
+  if (!translatedText) {
+    return text;
+  }
+
+  return this.decodeHtmlEntities(translatedText);
+}
+
+private splitTextIntoChunks(text: string, maxLength: number): string[] {
+  const sentences = text
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .filter(Boolean);
+
+  const chunks: string[] = [];
+  let currentChunk = '';
+
+  for (const sentence of sentences) {
+    if ((currentChunk + ' ' + sentence).trim().length <= maxLength) {
+      currentChunk = (currentChunk + ' ' + sentence).trim();
+      continue;
+    }
+
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+
+    currentChunk = sentence;
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks.length > 0 ? chunks : [text.slice(0, maxLength)];
+}
+
+private decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
 }
