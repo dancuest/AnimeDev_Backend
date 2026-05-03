@@ -151,9 +151,13 @@ export class RecommendationsService {
 
     const normalizedCollaborative = this.minMaxNormalize(collaborativeScores);
 
-    const reranked = animeDetails
+    const scoredCandidates = animeDetails
       .map((anime) => {
         const collaborativeScore = normalizedCollaborative.get(anime.id) ?? 0;
+        const genreMatchCount = this.countGenreMatches(
+          anime,
+          settings.preferredGenres,
+        );
         const genreScore = this.getGenreMatchScore(
           anime,
           settings.preferredGenres,
@@ -170,11 +174,24 @@ export class RecommendationsService {
           durationScore * this.HYBRID_DURATION_WEIGHT +
           demographicScore * this.HYBRID_DEMOGRAPHIC_WEIGHT;
 
-        return { anime, finalScore };
+        return { anime, finalScore, genreMatchCount };
       })
-      .sort((a, b) => b.finalScore - a.finalScore)
-      .slice(0, 10)
-      .map((item) => item.anime);
+      .sort((a, b) => b.finalScore - a.finalScore);
+
+    const preferredGenreAnchored =
+      settings.preferredGenres.length > 0
+        ? scoredCandidates.filter((item) => item.genreMatchCount > 0)
+        : scoredCandidates;
+
+    const mergedRanking = [
+      ...preferredGenreAnchored,
+      ...scoredCandidates.filter(
+        (item) =>
+          !preferredGenreAnchored.some((preferred) => preferred.anime.id === item.anime.id),
+      ),
+    ];
+
+    const reranked = mergedRanking.slice(0, 10).map((item) => item.anime);
 
     const strategy: RecommendationMeta["strategy"] =
       hasPreferences || hasDemographicSignals ? "hybrid" : "collaborative";
