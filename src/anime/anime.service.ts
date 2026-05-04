@@ -1,6 +1,12 @@
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cache } from 'cache-manager';
 import { lastValueFrom } from 'rxjs';
@@ -14,21 +20,47 @@ import {
   JikanListResponse,
 } from './types/jikan.types';
 
-interface TranslationResponse {
+interface MyMemoryTranslationResponse {
   responseData?: {
     translatedText?: string;
+    match?: number;
   };
+  responseStatus?: number | string;
+  responseDetails?: string;
+  quotaFinished?: boolean;
+  responderId?: string;
 }
+
+type GoogleTranslateResponse = [
+  Array<[string, string, unknown, unknown]>,
+  unknown,
+  string,
+];
 
 @Injectable()
 export class AnimeService {
+  private readonly logger = new Logger(AnimeService.name);
+
   private readonly baseUrl: string;
   private readonly cacheTtlMs: number;
   private readonly shortCacheTtlMs: number;
   private readonly translateSynopses: boolean;
   private readonly translationBaseUrl: string;
+  private readonly translationEmail?: string;
 
   private static readonly ADULT_GENRE_IDS = new Set(['9', '12', '49']);
+
+  /**
+   * MyMemory limita q a 500 bytes UTF-8.
+   * Se usa 380 para dejar margen operativo y evitar rechazos silenciosos.
+   */
+  private static readonly TRANSLATION_CHUNK_MAX_BYTES = 380;
+
+  private static readonly MYMEMORY_TIMEOUT_MS = 12_000;
+  private static readonly GOOGLE_TRANSLATE_TIMEOUT_MS = 15_000;
+
+  private static readonly GOOGLE_TRANSLATE_URL =
+    'https://translate.googleapis.com/translate_a/single';
 
   constructor(
     private readonly httpService: HttpService,
@@ -40,7 +72,8 @@ export class AnimeService {
       this.configService.get<string>('jikanBaseUrl') ??
       'https://api.jikan.moe/v4';
 
-    this.cacheTtlMs = this.configService.get<number>('cacheTtlMs') ?? 600_000;
+    this.cacheTtlMs =
+      this.configService.get<number>('cacheTtlMs') ?? 600_000;
 
     this.shortCacheTtlMs =
       this.configService.get<number>('shortCacheTtlMs') ?? 60_000;
@@ -51,10 +84,19 @@ export class AnimeService {
     this.translationBaseUrl =
       this.configService.get<string>('translationBaseUrl') ??
       'https://api.mymemory.translated.net/get';
+
+    this.translationEmail =
+      this.configService.get<string>('translationEmail') || undefined;
+
+    this.logger.log(
+      `AnimeService iniciado. translateSynopses=${this.translateSynopses}, translationEmail=${
+        this.translationEmail ? 'configurado' : 'no configurado'
+      }`,
+    );
   }
 
   /**
-   * If includeAdult !== true -> enforce sfw=true upstream (Jikan)
+   * Si includeAdult !== true, se fuerza sfw=true hacia Jikan.
    */
   private withSfw(
     params: Record<string, unknown>,
@@ -71,7 +113,9 @@ export class AnimeService {
   }
 
   async getTop(limit = 10, requestId?: string, includeAdult?: boolean) {
-    const cacheKey = `anime:top:${limit}:${includeAdult === true ? 'all' : 'sfw'}`;
+    const cacheKey = `anime:top:${limit}:${
+      includeAdult === true ? 'all' : 'sfw'
+    }`;
 
     const data = await this.getCached(
       cacheKey,
@@ -137,7 +181,10 @@ export class AnimeService {
     id: number,
     requestId?: string,
   ): Promise<{ data: AnimeDetailDto }> {
-    const cacheKey = `anime:detail:${id}:full:es`;
+    /**
+     * Nueva versión para no reutilizar cache vieja en inglés.
+     */
+    const cacheKey = `anime:detail:${id}:full:es:v20`;
 
     const detail = await this.getCached(cacheKey, async () => {
       const response = await this.fetchDetail<JikanAnime>(
@@ -147,9 +194,14 @@ export class AnimeService {
 
       const anime = this.mapper.toAnimeDto(response.data);
 
+      const translatedSynopsis = await this.translateSynopsisToSpanish(
+        anime.synopsis,
+        anime.id,
+      );
+
       const animeWithSpanishSynopsis: AnimeDto = {
         ...anime,
-        synopsis: await this.translateSynopsisToSpanish(anime.synopsis),
+        synopsis: translatedSynopsis,
       };
 
       return {
@@ -158,9 +210,6 @@ export class AnimeService {
           animeWithSpanishSynopsis,
           response.data,
         ),
-
-        // Ya no se generan búsquedas falsas de YouTube.
-        // El trailer oficial queda disponible en anime.trailerUrl.
         trailers: [],
       };
     });
@@ -169,7 +218,7 @@ export class AnimeService {
   }
 
   async getHero(requestId?: string): Promise<{ data: AnimeDto }> {
-    const cacheKey = 'anime:hero:es';
+    const cacheKey = 'anime:hero:es:v20';
 
     const anime = await this.getCached(
       cacheKey,
@@ -180,7 +229,9 @@ export class AnimeService {
           requestId,
         );
 
-        const items = response.data.map((item) => this.mapper.toAnimeDto(item));
+        const items = response.data.map((item) =>
+          this.mapper.toAnimeDto(item),
+        );
 
         if (items.length === 0) {
           throw new HttpException(
@@ -200,6 +251,7 @@ export class AnimeService {
           ...selectedAnime,
           synopsis: await this.translateSynopsisToSpanish(
             selectedAnime.synopsis,
+            selectedAnime.id,
           ),
         };
       },
@@ -405,7 +457,10 @@ export class AnimeService {
     return notes.slice(0, 4);
   }
 
-  private async translateSynopsisToSpanish(synopsis: string): Promise<string> {
+  private async translateSynopsisToSpanish(
+    synopsis: string,
+    animeId?: number | string,
+  ): Promise<string> {
     const cleanSynopsis = synopsis.trim();
 
     if (!cleanSynopsis) {
@@ -413,57 +468,222 @@ export class AnimeService {
     }
 
     if (!this.translateSynopses) {
+      this.logger.warn(
+        `Traducción desactivada. animeId=${animeId ?? 'unknown'}`,
+      );
       return cleanSynopsis;
+    }
+
+    const chunks = this.splitTextIntoChunksByBytes(
+      cleanSynopsis,
+      AnimeService.TRANSLATION_CHUNK_MAX_BYTES,
+    );
+
+    if (chunks.length === 0) {
+      return cleanSynopsis;
+    }
+
+    this.logger.log(
+      `Traduciendo sinopsis animeId=${animeId ?? 'unknown'} chunks=${chunks.length}`,
+    );
+
+    const translatedChunks: string[] = [];
+
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunk = chunks[index];
+      const translatedChunk = await this.translateChunkWithFallbackProviders(
+        chunk,
+        index + 1,
+        chunks.length,
+        animeId,
+      );
+
+      translatedChunks.push(translatedChunk);
+    }
+
+    const translated = translatedChunks.join(' ').replace(/\s+/g, ' ').trim();
+
+    if (!translated) {
+      return cleanSynopsis;
+    }
+
+    return translated;
+  }
+
+  private async translateChunkWithFallbackProviders(
+    text: string,
+    chunkNumber: number,
+    totalChunks: number,
+    animeId?: number | string,
+  ): Promise<string> {
+    try {
+      const translatedByMyMemory = await this.translateChunkWithMyMemory(text);
+
+      if (this.isUsableSpanishTranslation(translatedByMyMemory, text)) {
+        return translatedByMyMemory;
+      }
+
+      this.logger.warn(
+        `MyMemory devolvió una traducción no utilizable. animeId=${
+          animeId ?? 'unknown'
+        } chunk=${chunkNumber}/${totalChunks}`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `MyMemory falló. animeId=${animeId ?? 'unknown'} chunk=${chunkNumber}/${totalChunks}. Motivo: ${this.getErrorMessage(
+          error,
+        )}`,
+      );
     }
 
     try {
-      const chunks = this.splitTextIntoChunks(cleanSynopsis, 450);
-      const translatedChunks: string[] = [];
+      const translatedByGoogle = await this.translateChunkWithGoogle(text);
 
-      for (const chunk of chunks) {
-        translatedChunks.push(await this.translateChunkToSpanish(chunk));
+      if (this.isUsableSpanishTranslation(translatedByGoogle, text)) {
+        return translatedByGoogle;
       }
 
-      const translated = translatedChunks.join(' ').trim();
-
-      return translated || cleanSynopsis;
-    } catch {
-      return cleanSynopsis;
+      this.logger.warn(
+        `Google Translate devolvió una traducción no utilizable. animeId=${
+          animeId ?? 'unknown'
+        } chunk=${chunkNumber}/${totalChunks}`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Google Translate falló. animeId=${animeId ?? 'unknown'} chunk=${chunkNumber}/${totalChunks}. Motivo: ${this.getErrorMessage(
+          error,
+        )}`,
+      );
     }
+
+    /**
+     * Último respaldo:
+     * Se conserva el texto original solo si ambos proveedores fallan.
+     * Si aquí sigue saliendo inglés, el log anterior dirá exactamente cuál proveedor falló.
+     */
+    return text;
   }
 
-  private async translateChunkToSpanish(text: string): Promise<string> {
+  private async translateChunkWithMyMemory(text: string): Promise<string> {
+    const params: Record<string, string | number> = {
+      q: text,
+      langpair: 'en|es',
+      mt: 1,
+    };
+
+    if (this.translationEmail) {
+      params.de = this.translationEmail;
+    }
+
     const response = await lastValueFrom(
-      this.httpService.get<TranslationResponse>(this.translationBaseUrl, {
-        params: {
-          q: text,
-          langpair: 'en|es',
+      this.httpService.get<MyMemoryTranslationResponse>(
+        this.translationBaseUrl,
+        {
+          params,
+          timeout: AnimeService.MYMEMORY_TIMEOUT_MS,
         },
-        timeout: 8000,
-      }),
+      ),
     );
 
     const translatedText = response.data?.responseData?.translatedText?.trim();
 
-    if (!translatedText) {
-      return text;
+    if (translatedText && !this.isInvalidProviderMessage(translatedText)) {
+      return this.decodeHtmlEntities(translatedText);
+    }
+
+    const responseStatus = Number(response.data?.responseStatus ?? 0);
+
+    throw new Error(
+      response.data?.responseDetails ??
+        `MyMemory returned invalid response. status=${responseStatus}`,
+    );
+  }
+
+  private async translateChunkWithGoogle(text: string): Promise<string> {
+    const response = await lastValueFrom(
+      this.httpService.get<GoogleTranslateResponse>(
+        AnimeService.GOOGLE_TRANSLATE_URL,
+        {
+          params: {
+            client: 'gtx',
+            sl: 'en',
+            tl: 'es',
+            dt: 't',
+            q: text,
+          },
+          timeout: AnimeService.GOOGLE_TRANSLATE_TIMEOUT_MS,
+        },
+      ),
+    );
+
+    const translatedText = response.data?.[0]
+      ?.map((item) => item?.[0] ?? '')
+      .join('')
+      .trim();
+
+    if (!translatedText || this.isInvalidProviderMessage(translatedText)) {
+      throw new Error('Google Translate returned invalid translatedText');
     }
 
     return this.decodeHtmlEntities(translatedText);
   }
 
-  private splitTextIntoChunks(text: string, maxLength: number): string[] {
-    const sentences = text
-      .replace(/\s+/g, ' ')
+  private isUsableSpanishTranslation(
+    translatedText: string,
+    originalText: string,
+  ): boolean {
+    const translated = translatedText.trim();
+    const original = originalText.trim();
+
+    if (!translated) {
+      return false;
+    }
+
+    if (this.normalizeText(translated) === this.normalizeText(original)) {
+      return false;
+    }
+
+    if (this.isInvalidProviderMessage(translated)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private isInvalidProviderMessage(text: string): boolean {
+    const normalized = text.toLowerCase();
+
+    return (
+      normalized.includes('quota') ||
+      normalized.includes('available free translations') ||
+      normalized.includes('please provide') ||
+      normalized.includes('invalid language pair') ||
+      normalized.includes('select two distinct languages') ||
+      normalized.includes('translated.net') ||
+      normalized.includes('mymemory warning')
+    );
+  }
+
+  private splitTextIntoChunksByBytes(text: string, maxBytes: number): string[] {
+    const normalizedText = text.replace(/\s+/g, ' ').trim();
+
+    if (!normalizedText) {
+      return [];
+    }
+
+    const sentences = normalizedText
       .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
       .filter(Boolean);
 
     const chunks: string[] = [];
     let currentChunk = '';
 
     for (const sentence of sentences) {
-      if ((currentChunk + ' ' + sentence).trim().length <= maxLength) {
-        currentChunk = (currentChunk + ' ' + sentence).trim();
+      const candidate = currentChunk ? `${currentChunk} ${sentence}` : sentence;
+
+      if (this.getUtf8ByteLength(candidate) <= maxBytes) {
+        currentChunk = candidate;
         continue;
       }
 
@@ -471,14 +691,95 @@ export class AnimeService {
         chunks.push(currentChunk);
       }
 
-      currentChunk = sentence;
+      if (this.getUtf8ByteLength(sentence) <= maxBytes) {
+        currentChunk = sentence;
+        continue;
+      }
+
+      const pieces = this.splitLongTextByBytes(sentence, maxBytes);
+
+      chunks.push(...pieces.slice(0, -1));
+      currentChunk = pieces[pieces.length - 1] ?? '';
     }
 
     if (currentChunk) {
       chunks.push(currentChunk);
     }
 
-    return chunks.length > 0 ? chunks : [text.slice(0, maxLength)];
+    return chunks;
+  }
+
+  private splitLongTextByBytes(text: string, maxBytes: number): string[] {
+    const words = text.split(' ');
+    const chunks: string[] = [];
+
+    let currentChunk = '';
+
+    for (const word of words) {
+      const candidate = currentChunk ? `${currentChunk} ${word}` : word;
+
+      if (this.getUtf8ByteLength(candidate) <= maxBytes) {
+        currentChunk = candidate;
+        continue;
+      }
+
+      if (currentChunk) {
+        chunks.push(currentChunk);
+      }
+
+      if (this.getUtf8ByteLength(word) <= maxBytes) {
+        currentChunk = word;
+        continue;
+      }
+
+      const pieces = this.splitVeryLongWordByBytes(word, maxBytes);
+
+      chunks.push(...pieces.slice(0, -1));
+      currentChunk = pieces[pieces.length - 1] ?? '';
+    }
+
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+
+    return chunks;
+  }
+
+  private splitVeryLongWordByBytes(word: string, maxBytes: number): string[] {
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    for (let index = 0; index < word.length; index += 1) {
+      const codePoint = word.codePointAt(index);
+      const char = String.fromCodePoint(codePoint ?? word.charCodeAt(index));
+
+      if (codePoint && codePoint > 0xffff) {
+        index += 1;
+      }
+
+      const candidate = currentChunk + char;
+
+      if (this.getUtf8ByteLength(candidate) <= maxBytes) {
+        currentChunk = candidate;
+        continue;
+      }
+
+      if (currentChunk) {
+        chunks.push(currentChunk);
+      }
+
+      currentChunk = char;
+    }
+
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+
+    return chunks;
+  }
+
+  private getUtf8ByteLength(text: string): number {
+    return Buffer.byteLength(text, 'utf8');
   }
 
   private decodeHtmlEntities(text: string): string {
@@ -488,5 +789,21 @@ export class AnimeService {
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>');
+  }
+
+  private normalizeText(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[.,;:!?'"“”‘’()[\]{}-]/g, '')
+      .trim();
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
   }
 }
