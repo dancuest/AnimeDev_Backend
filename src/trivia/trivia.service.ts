@@ -12,6 +12,7 @@ import {
   UserRole,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BulkImportTriviaQuestionDto } from './dto/bulk-import-trivia-question.dto';
 import { CreateTriviaQuestionDto } from './dto/create-trivia-question.dto';
 import { QueryTriviaQuestionDto } from './dto/query-trivia-question.dto';
 
@@ -108,6 +109,117 @@ export class TriviaService {
       success: true,
       message: 'Pregunta oficial creada y aprobada.',
       data: this.toResponse(created),
+    };
+  }
+
+  async bulkImportOfficialQuestions(
+    userId: string,
+    userRole: UserRole,
+    dto: BulkImportTriviaQuestionDto,
+  ) {
+    this.ensureCanModerate(userRole);
+
+    const normalizedQuestions = dto.questions.map((question, index) => {
+      this.validateAnimeId(question.animeId);
+      this.validateQuestionPayload(question);
+
+      return {
+        row: index + 1,
+        animeId: question.animeId,
+        externalAnimeId: question.externalAnimeId ?? question.animeId.toString(),
+        question: question.question.trim(),
+        options: question.options.map((option) => option.trim()),
+        correctAnswerIndex: question.correctAnswerIndex,
+        explanation: question.explanation?.trim() || null,
+        difficulty: question.difficulty,
+        category: question.category ?? 'GENERAL',
+      };
+    });
+
+    const duplicatedInsidePayload = this.findDuplicatedQuestionsInPayload(
+      normalizedQuestions,
+    );
+
+    if (duplicatedInsidePayload.length > 0) {
+      throw new BadRequestException({
+        message: 'El lote contiene preguntas duplicadas.',
+        duplicatedQuestions: duplicatedInsidePayload,
+      });
+    }
+
+    const existingQuestions = await this.prisma.triviaQuestion.findMany({
+      where: {
+        OR: normalizedQuestions.map((question) => ({
+          animeId: question.animeId,
+          question: {
+            equals: question.question,
+            mode: 'insensitive',
+          },
+        })),
+      },
+      select: {
+        animeId: true,
+        question: true,
+      },
+    });
+
+    const existingKeys = new Set(
+      existingQuestions.map((question) =>
+        this.buildQuestionKey(question.animeId, question.question),
+      ),
+    );
+
+    const questionsToCreate = normalizedQuestions.filter((question) => {
+      const key = this.buildQuestionKey(question.animeId, question.question);
+      return !existingKeys.has(key);
+    });
+
+    if (questionsToCreate.length === 0) {
+      return {
+        success: true,
+        message: 'No se importaron preguntas nuevas porque todas ya existían.',
+        meta: {
+          received: normalizedQuestions.length,
+          imported: 0,
+          skipped: normalizedQuestions.length,
+        },
+        data: [],
+      };
+    }
+
+    const created = await this.prisma.$transaction(
+      questionsToCreate.map((question) =>
+        this.prisma.triviaQuestion.create({
+          data: {
+            animeId: question.animeId,
+            externalAnimeId: question.externalAnimeId,
+            question: question.question,
+            options: question.options,
+            correctAnswerIndex: question.correctAnswerIndex,
+            explanation: question.explanation,
+            difficulty: question.difficulty,
+            category: question.category,
+            status: TriviaQuestionStatus.APPROVED,
+            source: TriviaQuestionSource.OFFICIAL,
+            createdByUserId: userId,
+            reviewedByUserId: userId,
+            reviewedAt: new Date(),
+          },
+        }),
+      ),
+    );
+
+    return {
+      success: true,
+      message: `Importación completada. Preguntas nuevas: ${created.length}. Omitidas por duplicado: ${
+        normalizedQuestions.length - created.length
+      }.`,
+      meta: {
+        received: normalizedQuestions.length,
+        imported: created.length,
+        skipped: normalizedQuestions.length - created.length,
+      },
+      data: created.map((question) => this.toResponse(question)),
     };
   }
 
@@ -235,9 +347,19 @@ export class TriviaService {
     }
   }
 
-  private validateQuestionPayload(dto: CreateTriviaQuestionDto) {
+  private validateQuestionPayload(dto: {
+    question: string;
+    options: string[];
+    correctAnswerIndex: number;
+  }) {
     if (!dto.options || dto.options.length !== 4) {
       throw new BadRequestException('La pregunta debe tener exactamente 4 opciones.');
+    }
+
+    const cleanQuestion = dto.question.trim();
+
+    if (cleanQuestion.length < 10) {
+      throw new BadRequestException('La pregunta debe tener mínimo 10 caracteres.');
     }
 
     const normalizedOptions = dto.options.map((option) => option.trim().toLowerCase());
@@ -253,7 +375,7 @@ export class TriviaService {
       throw new BadRequestException('El índice de respuesta correcta no apunta a una opción válida.');
     }
 
-    const questionAsOption = normalizedOptions.includes(dto.question.trim().toLowerCase());
+    const questionAsOption = normalizedOptions.includes(cleanQuestion.toLowerCase());
 
     if (questionAsOption) {
       throw new BadRequestException('La pregunta no puede repetirse como una opción de respuesta.');
@@ -264,6 +386,44 @@ export class TriviaService {
     if (userRole !== UserRole.ADMIN && userRole !== UserRole.MODERATOR) {
       throw new ForbiddenException('No tienes permisos para moderar preguntas de trivia.');
     }
+  }
+
+  private findDuplicatedQuestionsInPayload(
+    questions: Array<{
+      row: number;
+      animeId: number;
+      question: string;
+    }>,
+  ) {
+    const seen = new Map<string, number>();
+    const duplicated: Array<{
+      question: string;
+      animeId: number;
+      firstRow: number;
+      duplicatedRow: number;
+    }> = [];
+
+    for (const item of questions) {
+      const key = this.buildQuestionKey(item.animeId, item.question);
+      const firstRow = seen.get(key);
+
+      if (firstRow) {
+        duplicated.push({
+          question: item.question,
+          animeId: item.animeId,
+          firstRow,
+          duplicatedRow: item.row,
+        });
+      } else {
+        seen.set(key, item.row);
+      }
+    }
+
+    return duplicated;
+  }
+
+  private buildQuestionKey(animeId: number, question: string) {
+    return `${animeId}:${question.trim().toLowerCase()}`;
   }
 
   private toResponse(question: TriviaQuestion) {

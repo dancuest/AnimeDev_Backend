@@ -24,6 +24,7 @@ import {
 import { UserRole } from '@prisma/client';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { BulkImportTriviaQuestionDto } from './dto/bulk-import-trivia-question.dto';
 import { CreateTriviaQuestionDto } from './dto/create-trivia-question.dto';
 import { QueryTriviaQuestionDto } from './dto/query-trivia-question.dto';
 import {
@@ -97,6 +98,37 @@ export class TriviaController {
     @Body() dto: CreateTriviaQuestionDto,
   ) {
     return this.triviaService.submitQuestion(req.user!.userId, animeId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @Post('bulk-import')
+  @ApiOperation({
+    summary: 'Importar preguntas oficiales de forma masiva',
+    description:
+      'Permite a un ADMIN o MODERATOR cargar muchas preguntas verificadas. Las preguntas quedan APPROVED y OFFICIAL automáticamente.',
+  })
+  @ApiCreatedResponse({
+    description: 'Preguntas importadas correctamente.',
+  })
+  @ApiBadRequestResponse({
+    description: 'Payload inválido o preguntas duplicadas dentro del lote.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Token inexistente o inválido.',
+  })
+  @ApiForbiddenResponse({
+    description: 'El usuario no tiene permisos de moderación.',
+  })
+  bulkImportOfficialQuestions(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: BulkImportTriviaQuestionDto,
+  ) {
+    return this.triviaService.bulkImportOfficialQuestions(
+      req.user!.userId,
+      req.user!.role,
+      dto,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
