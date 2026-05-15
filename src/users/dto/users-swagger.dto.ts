@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 
 export class PreferredGenreDetailResponseDto {
   @ApiProperty({ example: 1 })
@@ -12,16 +13,28 @@ export class UserMeResponseDto {
   @ApiProperty({ example: '6e371561-2132-4040-9809-efe4f5b39e02' })
   id!: string;
 
-  @ApiPropertyOptional({ example: 'device-android-12345678', nullable: true })
+  @ApiPropertyOptional({
+    example: 'device-android-12345678',
+    nullable: true,
+  })
   deviceId?: string | null;
 
-  @ApiPropertyOptional({ example: 'usuario@correo.com', nullable: true })
+  @ApiPropertyOptional({
+    example: 'usuario@correo.com',
+    nullable: true,
+  })
   email?: string | null;
 
-  @ApiPropertyOptional({ example: 'Dan Cuestas', nullable: true })
+  @ApiPropertyOptional({
+    example: 'Dan Cuestas',
+    nullable: true,
+  })
   displayName?: string | null;
 
-  @ApiPropertyOptional({ example: 'Antigravity', nullable: true })
+  @ApiPropertyOptional({
+    example: 'Antigravity',
+    nullable: true,
+  })
   nickname?: string | null;
 
   @ApiPropertyOptional({
@@ -42,10 +55,23 @@ export class UserMeResponseDto {
   })
   createdAt?: string | null;
 
-  @ApiPropertyOptional({ example: 8, nullable: true })
+  @ApiProperty({
+    enum: UserRole,
+    example: UserRole.USER,
+    description: 'Rol del usuario dentro de AnimeDev.',
+  })
+  role!: UserRole;
+
+  @ApiPropertyOptional({
+    example: 8,
+    nullable: true,
+  })
   completedTrivias?: number | null;
 
-  @ApiPropertyOptional({ example: 15, nullable: true })
+  @ApiPropertyOptional({
+    example: 15,
+    nullable: true,
+  })
   favoriteCount?: number | null;
 }
 
@@ -53,13 +79,22 @@ export class UserSettingsResponseDto {
   @ApiProperty({ example: '6e371561-2132-4040-9809-efe4f5b39e02' })
   userId!: string;
 
-  @ApiPropertyOptional({ example: 3, nullable: true })
+  @ApiPropertyOptional({
+    example: 3,
+    nullable: true,
+  })
   ageRange?: number | null;
 
-  @ApiPropertyOptional({ example: 1, nullable: true })
+  @ApiPropertyOptional({
+    example: 1,
+    nullable: true,
+  })
   genderCode?: number | null;
 
-  @ApiPropertyOptional({ example: 2, nullable: true })
+  @ApiPropertyOptional({
+    example: 2,
+    nullable: true,
+  })
   regionCode?: number | null;
 
   @ApiProperty({

@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InteractionType } from '@prisma/client';
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import * as bcrypt from 'bcrypt';
-
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnimeService } from '../anime/anime.service';
 import { InteractionsService } from '../interactions/interactions.service';
@@ -47,6 +46,7 @@ export class UsersService {
           avatarUrl: true,
           coverImageUrl: true,
           createdAt: true,
+          role: true,
         },
       }),
       this.buildInteractionStats(userId),
@@ -91,6 +91,7 @@ export class UsersService {
           avatarUrl: true,
           coverImageUrl: true,
           createdAt: true,
+          role: true,
         },
       }),
       this.buildInteractionStats(userId),
@@ -185,7 +186,10 @@ export class UsersService {
   ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, password: true },
+      select: {
+        id: true,
+        password: true,
+      },
     });
 
     if (!user || !user.password) {
@@ -213,10 +217,14 @@ export class UsersService {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { password: newHash },
+      data: {
+        password: newHash,
+      },
     });
 
-    return { message: 'Contraseña actualizada correctamente.' };
+    return {
+      message: 'Contraseña actualizada correctamente.',
+    };
   }
 
   private async resolvePreferredGenreDetails(preferredGenres: number[]) {
@@ -226,10 +234,14 @@ export class UsersService {
 
     try {
       const genresCatalog = await this.animeService.getGenres(true);
+
       const genreMap = new Map(
         genresCatalog.data.map((genre) => [
           Number(genre.id),
-          { id: Number(genre.id), name: genre.name },
+          {
+            id: Number(genre.id),
+            name: genre.name,
+          },
         ]),
       );
 
@@ -300,6 +312,7 @@ export class UsersService {
     }
 
     const trimmed = value.trim();
+
     return trimmed.length > 0 ? trimmed : null;
   }
 
@@ -325,6 +338,7 @@ export class UsersService {
   private hashPassword(password: string): string {
     const salt = randomBytes(16).toString('hex');
     const hash = scryptSync(password, salt, 64).toString('hex');
+
     return `${salt}:${hash}`;
   }
 
