@@ -5,13 +5,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { TriviaCategory, TriviaQuestionStatus } from '@prisma/client';
+import { AnimeService } from '../../anime/anime.service';
 import { CreateQuestionReportDto } from './dto/create-question-report.dto';
 import { UpdateQuestionReportDto } from './dto/update-question-report.dto';
 import { UpsertTriviaQuestionDto } from './dto/upsert-trivia-question.dto';
 
 @Injectable()
 export class TriviaAdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly animeService: AnimeService,
+  ) {}
 
   async createQuestionReport(userId: string, dto: CreateQuestionReportDto) {
     const reason = dto.reason.trim();
@@ -43,7 +48,7 @@ export class TriviaAdminService {
 
     const where =
       status && status !== 'ALL'
-        ? { status }
+        ? { status: status as unknown as TriviaQuestionStatus }
         : {};
 
     return this.prisma.triviaQuestionReport.findMany({
@@ -84,6 +89,23 @@ export class TriviaAdminService {
     });
   }
 
+  async listQuestionsForAdmin(userId: string, status?: string) {
+    await this.assertAdmin(userId);
+
+    const where =
+      status && status !== 'ALL'
+        ? { status: status as unknown as TriviaQuestionStatus }
+        : {};
+
+    return this.prisma.triviaQuestion.findMany({
+      where,
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 200,
+    });
+  }
+
   async searchAnime(userId: string, query: string) {
     await this.assertAdmin(userId);
 
@@ -93,39 +115,17 @@ export class TriviaAdminService {
       return [];
     }
 
-    const animeDelegate = (this.prisma as any).anime;
+    const result = await this.animeService.search(q, 20);
 
-    return animeDelegate.findMany({
-      where: {
-        OR: [
-          {
-            title: {
-              contains: q,
-              mode: 'insensitive',
-            },
-          },
-          {
-            originalTitle: {
-              contains: q,
-              mode: 'insensitive',
-            },
-          },
-        ],
-      },
-      select: {
-        id: true,
-        externalApiId: true,
-        title: true,
-        originalTitle: true,
-        coverImageUrl: true,
-        totalEpisodes: true,
-        releaseYear: true,
-      },
-      orderBy: {
-        title: 'asc',
-      },
-      take: 25,
-    });
+    return result.data.map((anime) => ({
+      id: anime.id,
+      externalApiId: anime.externalApiId,
+      title: anime.title,
+      originalTitle: anime.originalTitle,
+      coverImageUrl: anime.coverImageUrl,
+      totalEpisodes: anime.totalEpisodes,
+      releaseYear: anime.releaseYear,
+    }));
   }
 
   async listQuestionsByAnime(userId: string, animeId: number) {
@@ -135,9 +135,7 @@ export class TriviaAdminService {
       throw new BadRequestException('animeId inválido');
     }
 
-    const triviaQuestionDelegate = (this.prisma as any).triviaQuestion;
-
-    return triviaQuestionDelegate.findMany({
+    return this.prisma.triviaQuestion.findMany({
       where: {
         animeId,
       },
@@ -157,41 +155,24 @@ export class TriviaAdminService {
 
     this.validateQuestionPayload(dto, true);
 
-    const triviaQuestionDelegate = (this.prisma as any).triviaQuestion;
-
-    return triviaQuestionDelegate.create({
+    return this.prisma.triviaQuestion.create({
       data: {
-        animeId: dto.animeId,
+        animeId: dto.animeId!,
         externalAnimeId: dto.externalAnimeId ?? String(dto.animeId),
         question: dto.question!.trim(),
-        options: dto.options,
-        correctAnswerIndex: dto.correctAnswerIndex,
-        difficulty: dto.difficulty,
-        category: dto.category?.trim() || 'GENERAL',
+        options: dto.options!,
+        correctAnswerIndex: dto.correctAnswerIndex!,
+        difficulty: dto.difficulty!,
+        category: (dto.category?.trim() as unknown as TriviaCategory) || TriviaCategory.GENERAL,
         explanation: dto.explanation?.trim() || '',
-        status: dto.status ?? 'APPROVED',
+        status: (dto.status as unknown as TriviaQuestionStatus) ?? TriviaQuestionStatus.APPROVED,
+        source: 'OFFICIAL',
+        createdByUserId: userId,
+        reviewedByUserId: userId,
+        reviewedAt: new Date(),
       },
     });
   }
-
-  async listQuestionsForAdmin(userId: string, status?: string) {
-  await this.assertAdmin(userId);
-
-  const triviaQuestionDelegate = (this.prisma as any).triviaQuestion;
-
-  const where =
-    status && status !== 'ALL'
-      ? { status }
-      : {};
-
-  return triviaQuestionDelegate.findMany({
-    where,
-    orderBy: {
-      createdAt: 'desc',
-    },
-    take: 200,
-  });
-}
 
   async updateQuestion(
     userId: string,
@@ -210,7 +191,14 @@ export class TriviaAdminService {
     if (dto.difficulty !== undefined) data.difficulty = dto.difficulty;
     if (dto.category !== undefined) data.category = dto.category.trim();
     if (dto.explanation !== undefined) data.explanation = dto.explanation.trim();
-    if (dto.status !== undefined) data.status = dto.status;
+    if (dto.status !== undefined) {
+      data.status = dto.status;
+
+      if (dto.status === 'APPROVED' || dto.status === 'REJECTED') {
+        data.reviewedByUserId = userId;
+        data.reviewedAt = new Date();
+      }
+    }
 
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('No hay campos para actualizar');
@@ -220,11 +208,11 @@ export class TriviaAdminService {
       this.validateCorrectAnswerIndex(dto.options, dto.correctAnswerIndex);
     }
 
-    const triviaQuestionDelegate = (this.prisma as any).triviaQuestion;
-
     try {
-      return await triviaQuestionDelegate.update({
-        where: this.buildQuestionWhere(questionId),
+      return await this.prisma.triviaQuestion.update({
+        where: {
+          id: questionId,
+        },
         data,
       });
     } catch {
@@ -235,11 +223,11 @@ export class TriviaAdminService {
   async deleteQuestion(userId: string, questionId: string) {
     await this.assertAdmin(userId);
 
-    const triviaQuestionDelegate = (this.prisma as any).triviaQuestion;
-
     try {
-      const deleted = await triviaQuestionDelegate.delete({
-        where: this.buildQuestionWhere(questionId),
+      const deleted = await this.prisma.triviaQuestion.delete({
+        where: {
+          id: questionId,
+        },
       });
 
       return {
@@ -254,15 +242,25 @@ export class TriviaAdminService {
 
   private validateQuestionPayload(dto: UpsertTriviaQuestionDto, requireAll: boolean) {
     if (requireAll) {
-      if (!dto.animeId) throw new BadRequestException('animeId es obligatorio');
-      if (!dto.question?.trim()) throw new BadRequestException('question es obligatorio');
+      if (!dto.animeId) {
+        throw new BadRequestException('animeId es obligatorio');
+      }
+
+      if (!dto.question?.trim()) {
+        throw new BadRequestException('question es obligatorio');
+      }
+
       if (!dto.options || dto.options.length !== 4) {
         throw new BadRequestException('options debe tener exactamente 4 opciones');
       }
+
       if (dto.correctAnswerIndex === undefined) {
         throw new BadRequestException('correctAnswerIndex es obligatorio');
       }
-      if (!dto.difficulty) throw new BadRequestException('difficulty es obligatorio');
+
+      if (!dto.difficulty) {
+        throw new BadRequestException('difficulty es obligatorio');
+      }
     }
 
     if (dto.options && dto.correctAnswerIndex !== undefined) {
@@ -286,18 +284,8 @@ export class TriviaAdminService {
     }
   }
 
-  private buildQuestionWhere(questionId: string) {
-    const numericId = Number(questionId);
-
-    if (Number.isInteger(numericId) && String(numericId) === questionId.trim()) {
-      return { id: numericId } as any;
-    }
-
-    return { id: questionId } as any;
-  }
-
   private async assertAdmin(userId: string) {
-    const user = await (this.prisma as any).user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
 
