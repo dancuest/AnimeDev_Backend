@@ -43,7 +43,7 @@ type AuthenticatedRequest = Request & {
 @ApiTags('trivia')
 @Controller('trivia')
 export class TriviaController {
-  constructor(private readonly triviaService: TriviaService) {}
+  constructor(private readonly triviaService: TriviaService) { }
 
   @Get('anime/:animeId/questions')
   @ApiOperation({

@@ -9,4 +9,4 @@ import { TriviaService } from './trivia.service';
   providers: [TriviaService],
   exports: [TriviaService],
 })
-export class TriviaModule {}
+export class TriviaModule { }

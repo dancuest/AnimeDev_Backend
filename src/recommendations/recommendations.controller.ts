@@ -24,7 +24,7 @@ import { RecommendationsResponseDto } from './dto/recommendations-swagger.dto';
 export class RecommendationsController {
   constructor(
     private readonly recommendationsService: RecommendationsService,
-  ) {}
+  ) { }
 
   @UseGuards(JwtAuthGuard)
   @Get('adaptive')

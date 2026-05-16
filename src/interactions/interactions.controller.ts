@@ -33,7 +33,7 @@ import {
 @Controller('interactions')
 @UseGuards(JwtAuthGuard)
 export class InteractionsController {
-  constructor(private readonly interactionsService: InteractionsService) {}
+  constructor(private readonly interactionsService: InteractionsService) { }
 
   @Post()
   @ApiOperation({ summary: 'Registrar una interacción del usuario con un anime' })

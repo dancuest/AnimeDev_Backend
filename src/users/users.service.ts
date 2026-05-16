@@ -31,7 +31,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly animeService: AnimeService,
     private readonly interactionsService: InteractionsService,
-  ) {}
+  ) { }
 
   async getMe(userId: string) {
     const [user, stats] = await Promise.all([

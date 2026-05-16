@@ -89,8 +89,7 @@ export class AnimeService {
       this.configService.get<string>('translationEmail') || undefined;
 
     this.logger.log(
-      `AnimeService iniciado. translateSynopses=${this.translateSynopses}, translationEmail=${
-        this.translationEmail ? 'configurado' : 'no configurado'
+      `AnimeService iniciado. translateSynopses=${this.translateSynopses}, translationEmail=${this.translationEmail ? 'configurado' : 'no configurado'
       }`,
     );
   }
@@ -113,9 +112,8 @@ export class AnimeService {
   }
 
   async getTop(limit = 10, requestId?: string, includeAdult?: boolean) {
-    const cacheKey = `anime:top:${limit}:${
-      includeAdult === true ? 'all' : 'sfw'
-    }`;
+    const cacheKey = `anime:top:${limit}:${includeAdult === true ? 'all' : 'sfw'
+      }`;
 
     const data = await this.getCached(
       cacheKey,
@@ -267,9 +265,8 @@ export class AnimeService {
     requestId?: string,
     includeAdult?: boolean,
   ): Promise<{ data: AnimeDto[]; meta: { limit: number } }> {
-    const cacheKey = `anime:genre:${genreId}:${limit}:${
-      includeAdult === true ? 'all' : 'sfw'
-    }`;
+    const cacheKey = `anime:genre:${genreId}:${limit}:${includeAdult === true ? 'all' : 'sfw'
+      }`;
 
     const data = await this.getCached(
       cacheKey,
@@ -524,8 +521,7 @@ export class AnimeService {
       }
 
       this.logger.warn(
-        `MyMemory devolvió una traducción no utilizable. animeId=${
-          animeId ?? 'unknown'
+        `MyMemory devolvió una traducción no utilizable. animeId=${animeId ?? 'unknown'
         } chunk=${chunkNumber}/${totalChunks}`,
       );
     } catch (error) {
@@ -544,8 +540,7 @@ export class AnimeService {
       }
 
       this.logger.warn(
-        `Google Translate devolvió una traducción no utilizable. animeId=${
-          animeId ?? 'unknown'
+        `Google Translate devolvió una traducción no utilizable. animeId=${animeId ?? 'unknown'
         } chunk=${chunkNumber}/${totalChunks}`,
       );
     } catch (error) {
@@ -595,7 +590,7 @@ export class AnimeService {
 
     throw new Error(
       response.data?.responseDetails ??
-        `MyMemory returned invalid response. status=${responseStatus}`,
+      `MyMemory returned invalid response. status=${responseStatus}`,
     );
   }
 

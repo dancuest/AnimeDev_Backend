@@ -32,7 +32,7 @@ import {
 @ApiBearerAuth('access-token')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(private readonly users: UsersService) { }
 
   @UseGuards(AuthGuard('jwt'))
   @Get('me')

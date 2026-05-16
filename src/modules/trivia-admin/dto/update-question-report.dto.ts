@@ -9,4 +9,4 @@ export class UpdateQuestionReportDto {
     @IsString()
     @MaxLength(1000)
     adminNote?: string;
-}
+} 

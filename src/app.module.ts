@@ -38,4 +38,4 @@ import { TriviaAdminModule } from './modules/trivia-admin/trivia-admin.module';
     TriviaAdminModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

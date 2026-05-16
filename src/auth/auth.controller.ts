@@ -26,7 +26,7 @@ import {
 @ApiTags('autenticación')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly auth: AuthService) { }
 
   @Post('device')
   @ApiOperation({ summary: 'Crear o reanudar una sesión por dispositivo' })

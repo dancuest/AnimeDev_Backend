@@ -18,7 +18,7 @@ import { QueryTriviaQuestionDto } from './dto/query-trivia-question.dto';
 
 @Injectable()
 export class TriviaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async getApprovedQuestions(animeId: number, query: QueryTriviaQuestionDto) {
     this.validateAnimeId(animeId);
@@ -211,9 +211,8 @@ export class TriviaService {
 
     return {
       success: true,
-      message: `Importación completada. Preguntas nuevas: ${created.length}. Omitidas por duplicado: ${
-        normalizedQuestions.length - created.length
-      }.`,
+      message: `Importación completada. Preguntas nuevas: ${created.length}. Omitidas por duplicado: ${normalizedQuestions.length - created.length
+        }.`,
       meta: {
         received: normalizedQuestions.length,
         imported: created.length,

@@ -67,7 +67,7 @@ export class RecommendationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly animeService: AnimeService,
-  ) {}
+  ) { }
 
   async getAdaptiveRecommendations(userId: string, requestId?: string) {
     const [allInteractions, settingsRaw] = await Promise.all([

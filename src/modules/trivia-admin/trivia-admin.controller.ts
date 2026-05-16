@@ -2,20 +2,21 @@ import {
     Body,
     Controller,
     DefaultValuePipe,
+    Delete,
     Get,
     Param,
     ParseIntPipe,
     Patch,
     Post,
-    Delete,
     Query,
     Req,
     UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { TriviaAdminService } from './trivia-admin.service';
+import { BulkImportTriviaQuestionsDto } from './dto/bulk-import-trivia-question.dto';
 import { CreateQuestionReportDto } from './dto/create-question-report.dto';
+import { TriviaAdminService } from './trivia-admin.service';
 import { UpdateQuestionReportDto } from './dto/update-question-report.dto';
 import { UpsertTriviaQuestionDto } from './dto/upsert-trivia-question.dto';
 
@@ -37,6 +38,18 @@ export class TriviaAdminController {
         @Body() dto: CreateQuestionReportDto,
     ) {
         return this.triviaAdminService.createQuestionReport(
+            this.getUserId(req),
+            dto,
+        );
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Post('bulk-import')
+    bulkImportQuestions(
+        @Req() req: AuthenticatedRequest,
+        @Body() dto: BulkImportTriviaQuestionsDto,
+    ) {
+        return this.triviaAdminService.bulkImportQuestions(
             this.getUserId(req),
             dto,
         );
@@ -69,6 +82,30 @@ export class TriviaAdminController {
     }
 
     @UseGuards(JwtAuthGuard)
+    @Get('admin/questions')
+    listQuestionsForAdmin(
+        @Req() req: AuthenticatedRequest,
+        @Query('status', new DefaultValuePipe('PENDING')) status: string,
+    ) {
+        return this.triviaAdminService.listQuestionsForAdmin(
+            this.getUserId(req),
+            status,
+        );
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Get('admin/questions/:id')
+    getQuestionById(
+        @Req() req: AuthenticatedRequest,
+        @Param('id') id: string,
+    ) {
+        return this.triviaAdminService.getQuestionById(
+            this.getUserId(req),
+            id,
+        );
+    }
+
+    @UseGuards(JwtAuthGuard)
     @Get('admin/anime-search')
     searchAnime(
         @Req() req: AuthenticatedRequest,
@@ -76,7 +113,6 @@ export class TriviaAdminController {
     ) {
         return this.triviaAdminService.searchAnime(this.getUserId(req), q);
     }
-
 
     @UseGuards(JwtAuthGuard)
     @Get('admin/anime/:animeId/questions')
@@ -113,30 +149,6 @@ export class TriviaAdminController {
             this.getUserId(req),
             id,
             dto,
-        );
-    }
-
-    @UseGuards(JwtAuthGuard)
-    @Get('admin/questions/:id')
-    getQuestionById(
-        @Req() req: AuthenticatedRequest,
-        @Param('id') id: string,
-    ) {
-        return this.triviaAdminService.getQuestionById(
-            this.getUserId(req),
-            id,
-        );
-    }
-
-    @UseGuards(JwtAuthGuard)
-    @Get('admin/questions')
-    listQuestionsForAdmin(
-        @Req() req: AuthenticatedRequest,
-        @Query('status', new DefaultValuePipe('PENDING')) status: string,
-    ) {
-        return this.triviaAdminService.listQuestionsForAdmin(
-            this.getUserId(req),
-            status,
         );
     }
 

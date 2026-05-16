@@ -19,7 +19,7 @@ import {
 @ApiTags('anime')
 @Controller('anime')
 export class AnimeController {
-  constructor(private readonly animeService: AnimeService) {}
+  constructor(private readonly animeService: AnimeService) { }
 
   @Get('top')
   @ApiOperation({
