@@ -1,9 +1,27 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { DocumentBuilder, OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { RequestIdMiddleware } from './common/request-id.middleware';
+
+function applyGlobalSwaggerBearerAuth(document: OpenAPIObject) {
+  const securityRequirement = {
+    'access-token': [],
+  };
+
+  document.security = [securityRequirement];
+
+  Object.values(document.paths).forEach((pathItem) => {
+    if (!pathItem) return;
+
+    Object.values(pathItem).forEach((operation: any) => {
+      if (operation && typeof operation === 'object') {
+        operation.security = [securityRequirement];
+      }
+    });
+  });
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -34,13 +52,15 @@ async function bootstrap() {
         scheme: 'bearer',
         bearerFormat: 'JWT',
         description:
-          'Use the access_token returned by /auth/device or /auth/login',
+          'Pega solo el access_token devuelto por /auth/login o /auth/device. No escribas Bearer.',
       },
       'access-token',
     )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
+
+  applyGlobalSwaggerBearerAuth(document);
 
   SwaggerModule.setup('docs', app, document, {
     customSiteTitle: 'AnimeDev Backend Docs',
