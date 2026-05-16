@@ -12,6 +12,7 @@ import {
     Req,
     UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { BulkImportTriviaQuestionsDto } from './dto/bulk-import-trivia-question.dto';
@@ -27,6 +28,8 @@ type AuthenticatedRequest = Request & {
     };
 };
 
+@ApiTags('Trivia')
+@ApiBearerAuth('access-token')
 @Controller('trivia')
 export class TriviaAdminController {
     constructor(private readonly triviaAdminService: TriviaAdminService) { }
