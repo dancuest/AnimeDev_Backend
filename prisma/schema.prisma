@@ -132,3 +132,23 @@ enum TriviaQuestionSource {
   OFFICIAL
   USER_SUBMITTED
 }
+
+model TriviaQuestionReport {
+  id               String   @id @default(cuid())
+  questionId       String
+  animeId          Int?
+  animeTitle       String?
+  questionText     String
+  reason           String
+  status           String   @default("PENDING")
+  reporterUserId   String?
+  resolvedByUserId String?
+  adminNote        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  resolvedAt       DateTime?
+
+  @@index([questionId])
+  @@index([animeId])
+  @@index([status])
+}

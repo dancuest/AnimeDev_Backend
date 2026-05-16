@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { RecommendationsModule } from './recommendations/recommendations.module';
 import { InteractionsModule } from './interactions/interactions.module';
 import { TriviaModule } from './trivia/trivia.module';
+import { TriviaAdminModule } from './modules/trivia-admin/trivia-admin.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { TriviaModule } from './trivia/trivia.module';
     RecommendationsModule,
     InteractionsModule,
     TriviaModule,
+    TriviaAdminModule,
   ],
 })
 export class AppModule {}
