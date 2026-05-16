@@ -16,7 +16,7 @@ export class TriviaAdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly animeService: AnimeService,
-  ) {}
+  ) { }
 
   async createQuestionReport(userId: string, dto: CreateQuestionReportDto) {
     const reason = dto.reason.trim();
@@ -60,6 +60,22 @@ export class TriviaAdminService {
     });
   }
 
+  async getQuestionById(userId: string, questionId: string) {
+    await this.assertAdmin(userId);
+
+    const question = await this.prisma.triviaQuestion.findUnique({
+      where: {
+        id: questionId,
+      },
+    });
+
+    if (!question) {
+      throw new NotFoundException('Pregunta no encontrada');
+    }
+
+    return question;
+  }
+
   async updateQuestionReport(
     userId: string,
     reportId: string,
@@ -76,7 +92,7 @@ export class TriviaAdminService {
     }
 
     const nextStatus = dto.status ?? existing.status;
-    const isClosing = ['RESOLVED', 'REJECTED'].includes(nextStatus);
+    const isClosing = ['RESOLVED', 'REJECTED', 'DELETED'].includes(nextStatus);
 
     return this.prisma.triviaQuestionReport.update({
       where: { id: reportId },
