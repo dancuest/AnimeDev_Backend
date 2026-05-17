@@ -134,14 +134,15 @@ export class TriviaAdminService {
   }
 
   async searchAnime(userId: string, query: string) {
-    await this.assertAdmin(userId);
+  await this.assertAdmin(userId);
 
-    const q = query?.trim();
+  const q = query?.trim();
 
-    if (!q || q.length < 2) {
-      return [];
-    }
+  if (!q || q.length < 2) {
+    return [];
+  }
 
+  try {
     const result = await this.animeService.search(q, 20);
 
     return result.data.map((anime) => ({
@@ -153,7 +154,15 @@ export class TriviaAdminService {
       totalEpisodes: anime.totalEpisodes,
       releaseYear: anime.releaseYear,
     }));
+  } catch (error) {
+    console.warn(
+      `[TriviaAdminService] No fue posible buscar anime en proveedor externo. query="${q}"`,
+      error,
+    );
+
+    return [];
   }
+}
 
   async listQuestionsByAnime(userId: string, animeId: number) {
     await this.assertAdmin(userId);

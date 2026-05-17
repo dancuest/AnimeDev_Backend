@@ -136,27 +136,38 @@ export class AnimeService {
   }
 
   async search(
-    query: string,
-    limit = 10,
-    requestId?: string,
-    includeAdult?: boolean,
-  ) {
-    const response = await this.fetchList<JikanAnime>(
-      '/anime',
-      this.withSfw({ q: query, limit }, includeAdult),
-      requestId,
-    );
+  query: string,
+  limit = 10,
+  requestId?: string,
+  includeAdult?: boolean,
+) {
+  const normalizedQuery = query.trim().toLowerCase();
 
-    return {
-      data: response.data.map((anime) => this.mapper.toAnimeDto(anime)),
-      meta: {
-        limit,
-        total: response.pagination?.items?.total ?? response.data.length,
-        count: response.pagination?.items?.count ?? response.data.length,
-        hasNextPage: response.pagination?.has_next_page ?? false,
-      },
-    };
-  }
+  const cacheKey = `anime:search:${normalizedQuery}:${limit}:${includeAdult === true ? 'all' : 'sfw'
+    }`;
+
+  return this.getCached(
+    cacheKey,
+    async () => {
+      const response = await this.fetchList<JikanAnime>(
+        '/anime',
+        this.withSfw({ q: query, limit }, includeAdult),
+        requestId,
+      );
+
+      return {
+        data: response.data.map((anime) => this.mapper.toAnimeDto(anime)),
+        meta: {
+          limit,
+          total: response.pagination?.items?.total ?? response.data.length,
+          count: response.pagination?.items?.count ?? response.data.length,
+          hasNextPage: response.pagination?.has_next_page ?? false,
+        },
+      };
+    },
+    this.shortCacheTtlMs,
+  );
+}
 
   async getById(id: number, requestId?: string): Promise<{ data: AnimeDto }> {
     const cacheKey = `anime:${id}`;
