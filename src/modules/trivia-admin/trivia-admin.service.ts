@@ -108,13 +108,15 @@ export class TriviaAdminService {
         ? { status: status as unknown as TriviaQuestionStatus }
         : {};
 
-    return this.prisma.triviaQuestion.findMany({
+    const questions = await this.prisma.triviaQuestion.findMany({
       where,
       orderBy: {
         createdAt: 'desc',
       },
       take: 200,
     });
+
+    return this.withAnimeTitles(questions);
   }
 
   async getQuestionById(userId: string, questionId: string) {
@@ -130,39 +132,41 @@ export class TriviaAdminService {
       throw new NotFoundException('Pregunta no encontrada');
     }
 
-    return question;
+    const [enrichedQuestion] = await this.withAnimeTitles([question]);
+
+    return enrichedQuestion;
   }
 
   async searchAnime(userId: string, query: string) {
-  await this.assertAdmin(userId);
+    await this.assertAdmin(userId);
 
-  const q = query?.trim();
+    const q = query?.trim();
 
-  if (!q || q.length < 2) {
-    return [];
+    if (!q || q.length < 2) {
+      return [];
+    }
+
+    try {
+      const result = await this.animeService.search(q, 20);
+
+      return result.data.map((anime) => ({
+        id: anime.id,
+        externalApiId: anime.externalApiId,
+        title: anime.title,
+        originalTitle: anime.originalTitle,
+        coverImageUrl: anime.coverImageUrl,
+        totalEpisodes: anime.totalEpisodes,
+        releaseYear: anime.releaseYear,
+      }));
+    } catch (error) {
+      console.warn(
+        `[TriviaAdminService] No fue posible buscar anime en proveedor externo. query="${q}"`,
+        error,
+      );
+
+      return [];
+    }
   }
-
-  try {
-    const result = await this.animeService.search(q, 20);
-
-    return result.data.map((anime) => ({
-      id: anime.id,
-      externalApiId: anime.externalApiId,
-      title: anime.title,
-      originalTitle: anime.originalTitle,
-      coverImageUrl: anime.coverImageUrl,
-      totalEpisodes: anime.totalEpisodes,
-      releaseYear: anime.releaseYear,
-    }));
-  } catch (error) {
-    console.warn(
-      `[TriviaAdminService] No fue posible buscar anime en proveedor externo. query="${q}"`,
-      error,
-    );
-
-    return [];
-  }
-}
 
   async listQuestionsByAnime(userId: string, animeId: number) {
     await this.assertAdmin(userId);
@@ -171,7 +175,7 @@ export class TriviaAdminService {
       throw new BadRequestException('animeId inválido');
     }
 
-    return this.prisma.triviaQuestion.findMany({
+    const questions = await this.prisma.triviaQuestion.findMany({
       where: {
         animeId,
       },
@@ -184,6 +188,8 @@ export class TriviaAdminService {
         },
       ],
     });
+
+    return this.withAnimeTitles(questions);
   }
 
   async createQuestionAsAdmin(userId: string, dto: UpsertTriviaQuestionDto) {
@@ -197,7 +203,7 @@ export class TriviaAdminService {
       this.randomIndexFromText(dto.question!),
     );
 
-    return this.prisma.triviaQuestion.create({
+    const created = await this.prisma.triviaQuestion.create({
       data: {
         animeId: dto.animeId!,
         externalAnimeId: dto.externalAnimeId ?? String(dto.animeId),
@@ -214,6 +220,10 @@ export class TriviaAdminService {
         reviewedAt: new Date(),
       },
     });
+
+    const [enrichedQuestion] = await this.withAnimeTitles([created]);
+
+    return enrichedQuestion;
   }
 
   async bulkImportQuestions(userId: string, dto: BulkImportTriviaQuestionsDto) {
@@ -457,12 +467,16 @@ export class TriviaAdminService {
     }
 
     try {
-      return await this.prisma.triviaQuestion.update({
+      const updated = await this.prisma.triviaQuestion.update({
         where: {
           id: questionId,
         },
         data,
       });
+
+      const [enrichedQuestion] = await this.withAnimeTitles([updated]);
+
+      return enrichedQuestion;
     } catch {
       throw new NotFoundException('Pregunta no encontrada');
     }
@@ -478,14 +492,54 @@ export class TriviaAdminService {
         },
       });
 
+      const [enrichedQuestion] = await this.withAnimeTitles([deleted]);
+
       return {
         success: true,
         message: 'Pregunta eliminada correctamente',
-        question: deleted,
+        question: enrichedQuestion,
       };
     } catch {
       throw new NotFoundException('Pregunta no encontrada');
     }
+  }
+
+  private async withAnimeTitles<T extends { animeId: number | null }>(
+    questions: T[],
+  ): Promise<Array<T & { animeTitle: string | null }>> {
+    const animeIds = [
+      ...new Set(
+        questions
+          .map((question) => question.animeId)
+          .filter((animeId): animeId is number => {
+            return typeof animeId === 'number' && Number.isFinite(animeId);
+          }),
+      ),
+    ];
+
+    const titlesByAnimeId = new Map<number, string>();
+
+    await Promise.all(
+      animeIds.map(async (animeId) => {
+        try {
+          const result = await this.animeService.getById(animeId);
+          titlesByAnimeId.set(animeId, result.data.title);
+        } catch (error) {
+          console.warn(
+            `[TriviaAdminService] No fue posible resolver el título del anime animeId=${animeId}`,
+            error,
+          );
+        }
+      }),
+    );
+
+    return questions.map((question) => ({
+      ...question,
+      animeTitle:
+        question.animeId != null
+          ? titlesByAnimeId.get(question.animeId) ?? null
+          : null,
+    }));
   }
 
   private validateBulkItem(item: any): string | null {
