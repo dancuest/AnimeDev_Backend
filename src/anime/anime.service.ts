@@ -89,7 +89,8 @@ export class AnimeService {
       this.configService.get<string>('translationEmail') || undefined;
 
     this.logger.log(
-      `AnimeService iniciado. translateSynopses=${this.translateSynopses}, translationEmail=${this.translationEmail ? 'configurado' : 'no configurado'
+      `AnimeService iniciado. translateSynopses=${this.translateSynopses}, translationEmail=${
+        this.translationEmail ? 'configurado' : 'no configurado'
       }`,
     );
   }
@@ -112,8 +113,9 @@ export class AnimeService {
   }
 
   async getTop(limit = 10, requestId?: string, includeAdult?: boolean) {
-    const cacheKey = `anime:top:${limit}:${includeAdult === true ? 'all' : 'sfw'
-      }`;
+    const cacheKey = `anime:top:${limit}:${
+      includeAdult === true ? 'all' : 'sfw'
+    }`;
 
     const data = await this.getCached(
       cacheKey,
@@ -136,41 +138,46 @@ export class AnimeService {
   }
 
   async search(
-  query: string,
-  limit = 10,
-  requestId?: string,
-  includeAdult?: boolean,
-) {
-  const normalizedQuery = query.trim().toLowerCase();
+    query: string,
+    limit = 10,
+    requestId?: string,
+    includeAdult?: boolean,
+  ) {
+    const normalizedQuery = query.trim().toLowerCase();
 
-  const cacheKey = `anime:search:${normalizedQuery}:${limit}:${includeAdult === true ? 'all' : 'sfw'
+    const cacheKey = `anime:search:${normalizedQuery}:${limit}:${
+      includeAdult === true ? 'all' : 'sfw'
     }`;
 
-  return this.getCached(
-    cacheKey,
-    async () => {
-      const response = await this.fetchList<JikanAnime>(
-        '/anime',
-        this.withSfw({ q: query, limit }, includeAdult),
-        requestId,
-      );
+    return this.getCached(
+      cacheKey,
+      async () => {
+        const response = await this.fetchList<JikanAnime>(
+          '/anime',
+          this.withSfw({ q: query, limit }, includeAdult),
+          requestId,
+        );
 
-      return {
-        data: response.data.map((anime) => this.mapper.toAnimeDto(anime)),
-        meta: {
-          limit,
-          total: response.pagination?.items?.total ?? response.data.length,
-          count: response.pagination?.items?.count ?? response.data.length,
-          hasNextPage: response.pagination?.has_next_page ?? false,
-        },
-      };
-    },
-    this.shortCacheTtlMs,
-  );
-}
+        return {
+          data: response.data.map((anime) => this.mapper.toAnimeDto(anime)),
+          meta: {
+            limit,
+            total: response.pagination?.items?.total ?? response.data.length,
+            count: response.pagination?.items?.count ?? response.data.length,
+            hasNextPage: response.pagination?.has_next_page ?? false,
+          },
+        };
+      },
+      this.shortCacheTtlMs,
+    );
+  }
 
   async getById(id: number, requestId?: string): Promise<{ data: AnimeDto }> {
-    const cacheKey = `anime:${id}`;
+    /**
+     * Versión nueva para evitar reutilizar caché vieja en inglés.
+     * Este endpoint lo usan recomendaciones/favoritos cuando se restaura por ID.
+     */
+    const cacheKey = `anime:${id}:es:v21`;
 
     const anime = await this.getCached(cacheKey, async () => {
       const response = await this.fetchDetail<JikanAnime>(
@@ -178,7 +185,9 @@ export class AnimeService {
         requestId,
       );
 
-      return this.mapper.toAnimeDto(response.data);
+      const mappedAnime = this.mapper.toAnimeDto(response.data);
+
+      return this.withSpanishSynopsis(mappedAnime);
     });
 
     return {
@@ -193,7 +202,7 @@ export class AnimeService {
     /**
      * Nueva versión para no reutilizar cache vieja en inglés.
      */
-    const cacheKey = `anime:detail:${id}:full:es:v20`;
+    const cacheKey = `anime:detail:${id}:full:es:v21`;
 
     const detail = await this.getCached(cacheKey, async () => {
       const response = await this.fetchDetail<JikanAnime>(
@@ -202,16 +211,7 @@ export class AnimeService {
       );
 
       const anime = this.mapper.toAnimeDto(response.data);
-
-      const translatedSynopsis = await this.translateSynopsisToSpanish(
-        anime.synopsis,
-        anime.id,
-      );
-
-      const animeWithSpanishSynopsis: AnimeDto = {
-        ...anime,
-        synopsis: translatedSynopsis,
-      };
+      const animeWithSpanishSynopsis = await this.withSpanishSynopsis(anime);
 
       return {
         anime: animeWithSpanishSynopsis,
@@ -227,7 +227,7 @@ export class AnimeService {
   }
 
   async getHero(requestId?: string): Promise<{ data: AnimeDto }> {
-    const cacheKey = 'anime:hero:es:v20';
+    const cacheKey = 'anime:hero:es:v21';
 
     const anime = await this.getCached(
       cacheKey,
@@ -256,13 +256,7 @@ export class AnimeService {
 
         const selectedAnime = items[Math.floor(Math.random() * items.length)];
 
-        return {
-          ...selectedAnime,
-          synopsis: await this.translateSynopsisToSpanish(
-            selectedAnime.synopsis,
-            selectedAnime.id,
-          ),
-        };
+        return this.withSpanishSynopsis(selectedAnime);
       },
       this.shortCacheTtlMs,
     );
@@ -276,8 +270,9 @@ export class AnimeService {
     requestId?: string,
     includeAdult?: boolean,
   ): Promise<{ data: AnimeDto[]; meta: { limit: number } }> {
-    const cacheKey = `anime:genre:${genreId}:${limit}:${includeAdult === true ? 'all' : 'sfw'
-      }`;
+    const cacheKey = `anime:genre:${genreId}:${limit}:${
+      includeAdult === true ? 'all' : 'sfw'
+    }`;
 
     const data = await this.getCached(
       cacheKey,
@@ -465,6 +460,16 @@ export class AnimeService {
     return notes.slice(0, 4);
   }
 
+  private async withSpanishSynopsis(anime: AnimeDto): Promise<AnimeDto> {
+    return {
+      ...anime,
+      synopsis: await this.translateSynopsisToSpanish(
+        anime.synopsis,
+        anime.id,
+      ),
+    };
+  }
+
   private async translateSynopsisToSpanish(
     synopsis: string,
     animeId?: number | string,
@@ -532,7 +537,8 @@ export class AnimeService {
       }
 
       this.logger.warn(
-        `MyMemory devolvió una traducción no utilizable. animeId=${animeId ?? 'unknown'
+        `MyMemory devolvió una traducción no utilizable. animeId=${
+          animeId ?? 'unknown'
         } chunk=${chunkNumber}/${totalChunks}`,
       );
     } catch (error) {
@@ -551,7 +557,8 @@ export class AnimeService {
       }
 
       this.logger.warn(
-        `Google Translate devolvió una traducción no utilizable. animeId=${animeId ?? 'unknown'
+        `Google Translate devolvió una traducción no utilizable. animeId=${
+          animeId ?? 'unknown'
         } chunk=${chunkNumber}/${totalChunks}`,
       );
     } catch (error) {
@@ -601,7 +608,7 @@ export class AnimeService {
 
     throw new Error(
       response.data?.responseDetails ??
-      `MyMemory returned invalid response. status=${responseStatus}`,
+        `MyMemory returned invalid response. status=${responseStatus}`,
     );
   }
 
@@ -801,7 +808,7 @@ export class AnimeService {
     return text
       .toLowerCase()
       .replace(/\s+/g, ' ')
-      .replace(/[.,;:!?'"“”‘’()[\]{}-]/g, '')
+      .replace(/[.,;:!?'“”‘’()[\]{}-]/g, '')
       .trim();
   }
 
