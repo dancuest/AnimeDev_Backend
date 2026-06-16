@@ -1,7 +1,6 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-
 import configuration from '../config/configuration';
 import { validateEnvironment } from '../config/env.validation';
 import { UsersModule } from './users/users.module';
@@ -11,6 +10,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { RecommendationsModule } from './recommendations/recommendations.module';
 import { InteractionsModule } from './interactions/interactions.module';
+import { TriviaModule } from './trivia/trivia.module';
+import { TriviaAdminModule } from './modules/trivia-admin/trivia-admin.module';
 
 @Module({
   imports: [
@@ -19,15 +20,13 @@ import { InteractionsModule } from './interactions/interactions.module';
       load: [configuration],
       validate: validateEnvironment,
     }),
-
     CacheModule.registerAsync({
       isGlobal: true,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        ttl: config.get<number>('cacheTtlMs') ?? 600_000,
+        ttl: config.get('cacheTtlMs') ?? 600_000,
       }),
     }),
-
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -35,6 +34,8 @@ import { InteractionsModule } from './interactions/interactions.module';
     AnimeModule,
     RecommendationsModule,
     InteractionsModule,
+    TriviaModule,
+    TriviaAdminModule,
   ],
 })
 export class AppModule { }
